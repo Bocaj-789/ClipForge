@@ -30,6 +30,7 @@ class DiscoveryResult:
     cursor: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     quota_units: int = 0
+    search_calls: int = 0  # search.list calls made (their own Google quota bucket)
 
 
 @dataclass(frozen=True)

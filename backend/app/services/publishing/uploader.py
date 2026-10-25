@@ -189,6 +189,11 @@ def _effective_publish_at(db: Session, pub: Publication, channel: Channel) -> da
         text = "Den planerade tiden har passerat och kanalens regel är att hoppa över."
         _record(db, pub, ErrorCode.UPLOAD_FAILED, text, status=PublicationStatus.FAILED)
         raise permanent(ErrorCode.UPLOAD_FAILED, text)
+    if channel.release_spacing_minutes:
+        # Spaced releases keep their place in the chain; only a release time that slipped is moved.
+        pub.scheduled_for = now + MIN_SCHEDULE_LEAD + timedelta(minutes=1)
+        db.commit()
+        return pub.scheduled_for
     slot = next_slot(channel, now + MIN_SCHEDULE_LEAD)
     if slot is None:
         text = "Ingen ledig publiceringstid hittades de närmaste två veckorna."

@@ -74,7 +74,7 @@ def test_start_reports_missing_google_client(tmp_path) -> None:
     from app.main import create_app
     from tests.conftest import login
 
-    cfg = Config(data_dir=tmp_path / "d")
+    cfg = Config(_env_file=None, data_dir=tmp_path / "d")
     cfg.ensure_dirs()
     with TestClient(create_app(cfg, configure_logging=False), base_url="http://127.0.0.1:8000") as c:
         h = login(c, cfg)
@@ -83,7 +83,7 @@ def test_start_reports_missing_google_client(tmp_path) -> None:
 
 
 def test_client_secret_json_file_is_supported(tmp_path) -> None:
-    cfg = Config(data_dir=tmp_path / "d")
+    cfg = Config(_env_file=None, data_dir=tmp_path / "d")
     cfg.ensure_dirs()
     assert cfg.google_oauth_client() is None
     cfg.google_client_secret_file.write_text(

@@ -63,8 +63,6 @@ def test_channel_auto_publish_off_blocks() -> None:
     assert not _check(channel=_channel(auto_publish_enabled=False)).allowed
 
 
-
-
 def test_daily_caps_and_spacing() -> None:
     assert not _check(uploads_today_channel=2).allowed
     assert not _check(uploads_today_global=AppSettings().max_uploads_per_day_global).allowed
@@ -79,10 +77,17 @@ def test_manual_publish_requires_approval_and_oauth() -> None:
 
 
 def test_warnings_only_hold_back_automatic_uploads_that_would_become_public() -> None:
-    warned = _clip(warnings_json=["låg upplösning"])
+    warned = _clip(warnings_json=["Källan har låg upplösning; beskärningen skalas upp kraftigt."])
     assert _check(clip=warned).allowed  # private: safe to review in YouTube Studio
     assert not _check(clip=warned, channel=_channel(allow_public=True), visibility="public").allowed
     assert not _check(clip=warned, channel=_channel(allow_public=True), scheduled=True).allowed
+
+
+def test_crop_note_alone_does_not_block_public_release() -> None:
+    crop_only = _clip(
+        warnings_json=["Centrerad beskärning utan motivspårning – kontrollera att talaren syns."]
+    )
+    assert _check(clip=crop_only, channel=_channel(allow_public=True), scheduled=True).allowed
 
 
 def test_next_slot_respects_window_and_dst() -> None:

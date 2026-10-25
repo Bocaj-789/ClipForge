@@ -18,6 +18,13 @@ from app.services.settings_service import AppSettings
 
 AUTO_PUBLISH_CONFIRM_PHRASE = "JAG FÖRSTÅR RISKERNA"
 ALLOW_PUBLIC_CONFIRM_PHRASE = "OFFENTLIG PUBLICERING"
+# Render notes about the crop, not the quality of the result. They stay visible on the clip but do not
+# hold back an upload that would become public. Other warnings (low source resolution, no speech) do.
+INFORMATIONAL_WARNINGS = ("Centrerad beskärning utan motivspårning",)
+
+
+def blocking_warnings(warnings: list[str] | None) -> list[str]:
+    return [w for w in (warnings or []) if not w.startswith(INFORMATIONAL_WARNINGS)]
 
 
 @dataclass(frozen=True)
@@ -71,7 +78,7 @@ def check_publication(
             reasons.append("Klippets poäng är under kanalens gräns.")
         # Private/unlisted uploads can be reviewed in YouTube Studio before anyone sees them, so render
         # warnings (almost every centre-cropped clip has one) only hold back what would become public.
-        if clip.warnings_json and (visibility == "public" or scheduled):
+        if blocking_warnings(clip.warnings_json) and (visibility == "public" or scheduled):
             reasons.append("Klippet har varningar och kräver manuell granskning innan det blir offentligt.")
     elif clip.review_status != ReviewStatus.APPROVED:
         reasons.append("Klippet är inte godkänt.")

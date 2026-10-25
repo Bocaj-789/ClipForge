@@ -27,6 +27,9 @@ function ChannelForm({
     channel.schedule.windows?.[0]?.[0] ?? "09:00",
   );
   const [to, setTo] = useState(channel.schedule.windows?.[0]?.[1] ?? "21:00");
+  const [releaseSpacing, setReleaseSpacing] = useState<string>(
+    channel.release_spacing_minutes?.toString() ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -35,6 +38,9 @@ function ChannelForm({
       await api(`/channels/${channel.id}/settings`, {
         method: "PATCH",
         body: {
+          release_spacing_minutes: releaseSpacing
+            ? Number(releaseSpacing)
+            : null,
           max_uploads_per_day: perDay,
           min_spacing_minutes: spacing,
           default_visibility: visibility,
@@ -51,6 +57,18 @@ function ChannelForm({
       {error && <Notice tone="fail">{error}</Notice>}
       <p className="small muted">{t.channels.limitsLead}</p>
       <div className="form-grid">
+        <label>
+          {t.channels.releaseSpacing}
+          <input
+            type="number"
+            min={30}
+            max={10080}
+            placeholder={t.channels.releaseNow}
+            value={releaseSpacing}
+            onChange={(e) => setReleaseSpacing(e.target.value)}
+          />
+          <span className="help">{t.channels.releaseHelp}</span>
+        </label>
         <label>
           {t.channels.perDay}
           <input
@@ -326,9 +344,14 @@ export default function Channels() {
                         : t.channels.publicOff}
                     </Pill>
                     <span>
-                      max {c.max_uploads_per_day}/dag, {c.min_spacing_minutes}{" "}
-                      min mellanrum
+                      {c.release_spacing_minutes
+                        ? t.channels.releaseEvery.replace(
+                            "{minutes}",
+                            String(c.release_spacing_minutes),
+                          )
+                        : t.channels.releaseNow}
                     </span>
+                    <span>max {c.max_uploads_per_day}/dag</span>
                     <span>
                       {t.channels.lastUpload}: {fmtTime(c.last_upload_at)}
                     </span>

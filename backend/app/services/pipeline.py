@@ -33,6 +33,7 @@ from app.db.models import (
     JobType,
     RenderedClip,
     Source,
+    SourceKind,
     Transcript,
 )
 from app.services.acquisition import base as acq
@@ -48,6 +49,7 @@ from app.services.discovery.base import DiscoveryResult
 from app.services.intelligence.candidate_extractor import sentences_from_segments, validate_range
 from app.services.intelligence.llm_provider import ClipProvider, HeuristicProvider, OllamaProvider
 from app.services.intelligence.metadata import suggest_description, suggest_hashtags, suggest_title
+from app.services.publishing import quota
 from app.services.publishing import service as publishing
 from app.services.publishing.deps import PublishDeps, make_deps
 from app.services.publishing.uploader import UploadDeferred, run_publish
@@ -652,8 +654,18 @@ def handle_discover(ctx: JobContext) -> dict[str, Any]:
     src.consecutive_failures = 0
     src.cursor_json = result.cursor or src.cursor_json
     priority = Priority.CREATOR if src.kind in ("youtube_channel", "rss") else Priority.DISCOVERY
+    # Keep the local quota ledger honest for what discovery spent.
+    if result.search_calls:
+        quota.consume(ctx.db, quota.SEARCH, result.search_calls)
+    if result.quota_units:
+        quota.consume(ctx.db, quota.UNITS, result.quota_units)
+    ctx.notes.extend(result.notes)
     new = 0
     for item in result.items:
+        # The Creative Commons finder may only hand over videos whose license it verified through the
+        # API; that verification is what justifies the source's 'licensed' status. Fail closed.
+        if src.kind == SourceKind.YOUTUBE_CC_SEARCH and item.metadata.get("license") != "creativeCommon":
+            continue
         exists = ctx.db.scalar(
             select(CandidateVideo.id).where(CandidateVideo.canonical_url == item.canonical_url)
         )
@@ -671,6 +683,7 @@ def handle_discover(ctx: JobContext) -> dict[str, Any]:
             description=item.description,
             published_at=item.published_at,
             thumbnail_url=item.thumbnail_url,
+            duration_seconds=item.duration_seconds,
             priority=priority,
             rights_status=src.rights_status,
             rights_note=src.rights_note,

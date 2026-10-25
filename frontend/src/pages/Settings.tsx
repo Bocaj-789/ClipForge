@@ -216,6 +216,12 @@ const GROUPS: [string, Field[]][] = [
         kind: "int",
         help: "Googles standard är 10 000 enheter.",
       },
+      {
+        key: "youtube_daily_search_limit",
+        label: "Lokal gräns för sökningar (API-kvot)",
+        kind: "int",
+        help: "Googles standard är 100 sökningar per dygn. Används av Creative Commons-källor.",
+      },
     ],
   ],
   [

@@ -63,6 +63,7 @@ const channel = (over: Partial<Channel> = {}): Channel => ({
   made_for_kids: false,
   notify_subscribers: false,
   auto_publish_min_score: 0,
+  release_spacing_minutes: null,
   next_slot: null,
   last_upload_at: null,
   ...over,

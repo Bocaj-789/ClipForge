@@ -69,6 +69,7 @@ class ChannelIn(BaseModel):
     made_for_kids: bool = False
     notify_subscribers: bool = False
     auto_publish_min_score: float = Field(default=60.0, ge=0, le=100)
+    release_spacing_minutes: int | None = Field(default=None, ge=30, le=7 * 24 * 60)
 
     @field_validator("timezone")
     @classmethod
@@ -98,6 +99,7 @@ class ChannelPatch(BaseModel):
     made_for_kids: bool | None = None
     notify_subscribers: bool | None = None
     auto_publish_min_score: float | None = Field(default=None, ge=0, le=100)
+    release_spacing_minutes: int | None = Field(default=None, ge=30, le=7 * 24 * 60)
 
 
 class AutoPublishIn(BaseModel):
@@ -126,7 +128,7 @@ def _apply(c: Channel, data: dict) -> None:
         except ValueError as e:
             raise AppError(ErrorCode.INVALID_INPUT, "Okänd tidszon.") from e
     for k, v in data.items():
-        if k in ("schedule", "keywords") or v is None:
+        if k in ("schedule", "keywords") or (v is None and k != "release_spacing_minutes"):
             continue
         setattr(c, k, clean_text(v, 3000) if isinstance(v, str) and k != "description_template" else v)
     if c.min_clip_seconds >= c.max_clip_seconds:

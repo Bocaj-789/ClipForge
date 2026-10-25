@@ -24,7 +24,7 @@ PASSWORD = "korrekt-häst-batteri-42"
 
 @pytest.fixture
 def cfg(tmp_path: Path) -> Config:
-    c = Config(data_dir=tmp_path / "data")
+    c = Config(_env_file=None, data_dir=tmp_path / "data")
     c.ensure_dirs()
     return c
 
@@ -72,6 +72,7 @@ def google() -> FakeGoogle:
 @pytest.fixture
 def pub_cfg(tmp_path: Path) -> Config:
     c = Config(
+        _env_file=None,
         data_dir=tmp_path / "data",
         google_client_id="test-client.apps.googleusercontent.com",
         google_client_secret="test-client-secret-value",  # type: ignore[arg-type]

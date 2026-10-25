@@ -20,6 +20,20 @@ fi
 
 running() { [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
+# Optional local LLM. Started only when nothing already answers on its port, so an Ollama app or
+# service the user runs themselves is left alone (and stop.sh only stops what this script started).
+if command -v ollama >/dev/null 2>&1; then
+  if curl -fsS -m 2 "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+    echo "Ollama körs redan."
+  elif running "$RUN/ollama.pid"; then
+    echo "Ollama körs redan (pid $(cat "$RUN/ollama.pid"))."
+  else
+    nohup ollama serve >>"$DATA/logs/ollama.out" 2>&1 &
+    echo $! >"$RUN/ollama.pid"
+    echo "Ollama startad (pid $!). Om den inte svarar används heuristik."
+  fi
+fi
+
 PORT="${CLIPFORGE_PORT:-8000}"
 if running "$RUN/api.pid"; then
   echo "API körs redan (pid $(cat "$RUN/api.pid"))."

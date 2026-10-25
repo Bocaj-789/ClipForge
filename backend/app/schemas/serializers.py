@@ -97,6 +97,7 @@ def candidate(c: CandidateVideo, *, latest_job: Job | None = None) -> dict[str, 
         "last_error": c.last_error,
         "source_id": c.source_id,
         "media": {k: media.get(k) for k in ("width", "height", "orientation", "fps")} if media else None,
+        "finder": (c.metadata_json or {}).get("finder"),
         "latest_job": job(latest_job) if latest_job else None,
         "updated_at": c.updated_at,
     }
@@ -180,6 +181,7 @@ def source(s: Source) -> dict[str, Any]:
         "polling_interval_minutes": s.polling_interval_minutes,
         "category": s.category,
         "keywords": s.keywords_json,
+        "config": s.config_json or {},
         "rights_status": s.rights_status,
         "rights_note": s.rights_note,
         "next_check_at": s.next_check_at,
@@ -229,6 +231,7 @@ def channel(c: Channel) -> dict[str, Any]:
         "made_for_kids": c.made_for_kids,
         "notify_subscribers": c.notify_subscribers,
         "auto_publish_min_score": c.auto_publish_min_score,
+        "release_spacing_minutes": c.release_spacing_minutes,
         "last_upload_at": c.last_upload_at,
         "created_at": c.created_at,
     }

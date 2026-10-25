@@ -21,3 +21,7 @@ stop_one() {
 
 stop_one worker 75
 stop_one api 15
+# Ollama is stopped last because the worker may still be asking it for clip candidates.
+if [[ -f "$RUN/ollama.pid" ]]; then
+  stop_one ollama 15
+fi

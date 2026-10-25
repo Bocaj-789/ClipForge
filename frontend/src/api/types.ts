@@ -197,6 +197,7 @@ export interface Channel {
   made_for_kids: boolean;
   notify_subscribers: boolean;
   auto_publish_min_score: number;
+  release_spacing_minutes: number | null;
   next_slot: string | null;
   last_upload_at: string | null;
 }

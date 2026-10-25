@@ -56,9 +56,14 @@ function AddSource({ onDone }: { onDone: () => void }) {
         </label>
         <label>
           {t.discovery.name}
-          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={200}
+          />
         </label>
-        {kind !== "local_folder" && (
+        {kind !== "local_folder" && kind !== "youtube_cc_search" && (
           <label>
             {t.discovery.url}
             <input
@@ -66,7 +71,11 @@ function AddSource({ onDone }: { onDone: () => void }) {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               required
-              placeholder={kind === "rss" ? "https://www.youtube.com/channel/UC…" : "https://www.youtube.com/@kanal"}
+              placeholder={
+                kind === "rss"
+                  ? "https://www.youtube.com/channel/UC…"
+                  : "https://www.youtube.com/@kanal"
+              }
             />
           </label>
         )}
@@ -82,19 +91,28 @@ function AddSource({ onDone }: { onDone: () => void }) {
         </label>
         <label>
           {t.discovery.keywords}
-          <input value={keywords} onChange={(e) => setKeywords(e.target.value)} />
+          <input
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+          />
         </label>
         <label>
           {t.discovery.category}
-          <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
+          <input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            maxLength={100}
+          />
         </label>
       </div>
       <p className="help">
         {kind === "local_folder"
           ? t.discovery.folderHelp
-          : kind === "rss"
-            ? "YouTube-kanaler har ett öppet flöde utan API-nyckel. Ange kanaladressen med kanal-ID (UC…)."
-            : "Använder YouTube Data API inom gratiskvoten (cirka 2 kvotenheter per kontroll). Kräver CLIPFORGE_YOUTUBE_API_KEY."}
+          : kind === "youtube_cc_search"
+            ? "Skriv ämnen i Nyckelord, separerade med komma (t.ex. ekonomi, historia, intervju). ClipForge söker efter videor med YouTubes Creative Commons-licens och godkänner bara de som licensen verifieras för. Kräver CLIPFORGE_YOUTUBE_API_KEY."
+            : kind === "rss"
+              ? "YouTube-kanaler har ett öppet flöde utan API-nyckel. Ange kanaladressen med kanal-ID (UC…)."
+              : "Använder YouTube Data API inom gratiskvoten (cirka 2 kvotenheter per kontroll). Kräver CLIPFORGE_YOUTUBE_API_KEY."}
       </p>
       <div>
         <button className="primary" type="submit">
@@ -107,8 +125,14 @@ function AddSource({ onDone }: { onDone: () => void }) {
 
 export default function Discovery() {
   const toast = useToast();
-  const sources = usePoll<{ items: Source[] }>((s) => api("/sources", { signal: s }), 10000);
-  const found = usePoll<Paged<Candidate>>((s) => api("/candidates?origin=discovery&limit=50", { signal: s }), 10000);
+  const sources = usePoll<{ items: Source[] }>(
+    (s) => api("/sources", { signal: s }),
+    10000,
+  );
+  const found = usePoll<Paged<Candidate>>(
+    (s) => api("/candidates?origin=discovery&limit=50", { signal: s }),
+    10000,
+  );
   const act = async (path: string, method = "POST") => {
     try {
       await api(path, { method });
@@ -140,7 +164,10 @@ export default function Discovery() {
                     <span>var {s.polling_interval_minutes} min</span>
                     <span>{s.candidates} videor</span>
                     <span title={fmtTime(s.last_checked_at)}>
-                      {t.discovery.lastCheck} {s.last_checked_at ? fmtRelative(s.last_checked_at) : t.common.never}
+                      {t.discovery.lastCheck}{" "}
+                      {s.last_checked_at
+                        ? fmtRelative(s.last_checked_at)
+                        : t.common.never}
                     </span>
                   </div>
                   {s.last_error && (
@@ -150,10 +177,18 @@ export default function Discovery() {
                   )}
                 </div>
                 <div className="row">
-                  <button className="small" onClick={() => act(`/sources/${s.id}/check`)}>
+                  <button
+                    className="small"
+                    onClick={() => act(`/sources/${s.id}/check`)}
+                  >
                     {t.discovery.checkNow}
                   </button>
-                  <button className="small" onClick={() => act(`/sources/${s.id}/${s.paused ? "resume" : "pause"}`)}>
+                  <button
+                    className="small"
+                    onClick={() =>
+                      act(`/sources/${s.id}/${s.paused ? "resume" : "pause"}`)
+                    }
+                  >
                     {s.paused ? t.agent.resume : t.agent.pause}
                   </button>
                   <ConfirmButton

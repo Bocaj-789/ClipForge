@@ -21,13 +21,14 @@ from app.config import Config, get_config
 from app.core.errors import ErrorCode, JobError
 from app.db.base import utcnow
 from app.db.migrate import upgrade_to_head
-from app.db.models import Channel, Job, JobStatus, JobType, Source, WorkerHeartbeat
+from app.db.models import CandidateVideo, Channel, Job, JobStatus, JobType, Source, WorkerHeartbeat
 from app.db.session import init_engine, new_session, session_scope
 from app.logging_config import setup_logging
 from app.services import agent, pipeline, workspace
 from app.services.discovery.adapters import LocalFolderAdapter, RssAdapter, YouTubeApiAdapter
+from app.services.discovery.cc_finder import YouTubeCcSearchAdapter
+from app.services.publishing import quota, uploader
 from app.services.publishing import service as publishing
-from app.services.publishing import uploader
 from app.services.publishing.deps import PublishDeps, make_deps
 from app.services.queue import service as q
 from app.services.queue.states import DISK_HEAVY_TYPES, Priority
@@ -67,9 +68,31 @@ class Worker:
         if src.kind == "youtube_channel":
             key = self.cfg.youtube_api_key.get_secret_value() if self.cfg.youtube_api_key else None
             return YouTubeApiAdapter(key)
+        if src.kind == "youtube_cc_search":
+            return self._cc_adapter()
         if src.kind == "local_folder":
             return LocalFolderAdapter(self.cfg)
         raise JobError(ErrorCode.INVALID_INPUT, "Källtypen stöds inte.", transient=False, block=True)
+
+    def _cc_adapter(self) -> YouTubeCcSearchAdapter:
+        key = self.cfg.youtube_api_key.get_secret_value() if self.cfg.youtube_api_key else None
+        with session_scope() as db:
+            s = load_settings(db)
+            backlog = (
+                db.scalar(
+                    select(func.count())
+                    .select_from(CandidateVideo)
+                    .where(CandidateVideo.status.in_(["discovered", "queued", "analyzing"]))
+                )
+                or 0
+            )
+            return YouTubeCcSearchAdapter(
+                key,
+                search_budget=quota.remaining(db, s, quota.SEARCH),
+                unit_budget=quota.remaining(db, s, quota.UNITS),
+                backlog=backlog,
+                max_input_minutes=s.max_input_duration_minutes,
+            )
 
     def _settings(self) -> AppSettings:
         with session_scope() as db:

@@ -7,7 +7,7 @@ they do not prove anything about Google's live behaviour (see docs/YOUTUBE_SETUP
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
@@ -841,3 +841,34 @@ def test_publishing_status_endpoint(env: Env) -> None:
     assert body["redirect_uri"] == "http://127.0.0.1:8000/api/v1/oauth/youtube/callback"
     assert body["connected_channels"] == 3 and body["token_store"]["available"] is True
     assert body["quota"]["insert"]["limit"] == 100 and body["quota"]["units"]["limit"] == 10000
+
+
+def test_spaced_release_puts_each_clip_two_hours_after_the_latest_one(env: Env) -> None:
+    _make_allowed_public(env, "A")
+    with session_scope() as db:
+        db.get(Channel, env.channels["A"]).release_spacing_minutes = 120
+    _enable_auto(env, "A")
+    for _ in range(3):
+        out = _auto(env, env.clip())
+        assert out[0].outcome == "created", out[0].reasons
+    with session_scope() as db:
+        times = sorted(p.scheduled_for for p in db.scalars(select(Publication)))
+    gaps = [b - a for a, b in zip(times, times[1:], strict=False)]
+    assert gaps == [timedelta(minutes=120), timedelta(minutes=120)]
+    assert times[0] - utcnow() >= timedelta(minutes=15)  # YouTube refuses sooner release times
+    env.run()
+    sent = sorted(v["status"]["publishAt"] for v in env.google.videos.values())
+    assert all(v["status"]["privacyStatus"] == "private" for v in env.google.videos.values())
+    parsed = [datetime.fromisoformat(s.replace("Z", "+00:00")) for s in sent]
+    assert [b - a for a, b in zip(parsed, parsed[1:], strict=False)] == [timedelta(minutes=120)] * 2
+
+
+def test_spaced_release_needs_public_opt_in_and_skips_upload_spacing(env: Env) -> None:
+    with session_scope() as db:
+        db.get(Channel, env.channels["A"]).release_spacing_minutes = 120
+        db.get(Channel, env.channels["A"]).min_spacing_minutes = 240
+    _enable_auto(env, "A")
+    out = _auto(env, env.clip())
+    assert out[0].outcome == "blocked" and any("Offentlig" in r for r in out[0].reasons)
+    _make_allowed_public(env, "A")
+    assert _auto(env, env.clip())[0].outcome == "created"  # upload spacing does not apply to spaced releases

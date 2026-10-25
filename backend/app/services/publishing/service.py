@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -208,6 +208,31 @@ def enqueue_job(db: Session, pub: Publication, clip: RenderedClip, channel: Chan
     return job
 
 
+def release_slot(db: Session, channel: Channel, now: datetime) -> datetime:
+    """Spaced release: the next clip goes out ``release_spacing_minutes`` after the channel's latest release.
+
+    Every publication that still has a release time (queued, uploaded or scheduled) counts, so a burst
+    of clips lines up in order instead of colliding. The earliest possible time is the YouTube minimum
+    lead from now.
+    """
+    spacing = timedelta(minutes=channel.release_spacing_minutes or 0)
+    earliest = now + MIN_SCHEDULE_LEAD + timedelta(minutes=1)
+    times = [
+        t if t.tzinfo else t.replace(tzinfo=UTC)
+        for t in db.scalars(
+            select(Publication.scheduled_for).where(
+                Publication.channel_id == channel.id,
+                Publication.scheduled_for.is_not(None),
+                Publication.status.not_in([PublicationStatus.FAILED, PublicationStatus.CANCELLED]),
+            )
+        )
+        if t is not None
+    ]
+    if not times:
+        return earliest
+    return max(earliest, max(times) + spacing)
+
+
 def request_publication(
     db: Session,
     cfg: Config,
@@ -242,7 +267,14 @@ def request_publication(
             res.reasons = ["Uppladdningen till den här kanalen pågår redan."]
             continue
 
-        privacy, publish_at, problems = _resolve_timing(channel, opts, now)
+        spaced = opts.automatic and bool(channel.release_spacing_minutes)
+        privacy: str
+        publish_at: datetime | None
+        problems: list[str]
+        if spaced:
+            privacy, publish_at, problems = "public", release_slot(db, channel, now), []
+        else:
+            privacy, publish_at, problems = _resolve_timing(channel, opts, now)
         decision = check_publication(
             settings=settings,
             channel=channel,
@@ -251,7 +283,8 @@ def request_publication(
             automatic=opts.automatic,
             uploads_today_channel=uploads_today(db, settings, channel.id, now),
             uploads_today_global=uploads_today(db, settings, None, now),
-            last_upload_at=channel.last_upload_at,
+            # Spaced releases are paced by their release times, not by upload time.
+            last_upload_at=None if spaced else channel.last_upload_at,
             now=now,
             file_ok=file_ok,
             min_score=channel.auto_publish_min_score,

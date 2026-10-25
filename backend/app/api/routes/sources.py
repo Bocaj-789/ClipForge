@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -14,12 +14,13 @@ from app.db.base import new_id
 from app.db.models import CandidateVideo, JobType, Source
 from app.schemas import serializers as ser
 from app.services.audit import service as audit
+from app.services.discovery.cc_finder import CcSearchConfig
 from app.services.queue import service as q
 from app.services.queue.states import Priority
 from app.services.urls import UrlKind, UrlRejected, classify_url
 
 router = APIRouter(prefix="/sources", tags=["sources"])
-Kind = Literal["youtube_channel", "rss", "local_folder"]
+Kind = Literal["youtube_channel", "youtube_cc_search", "rss", "local_folder"]
 Rights = Literal[
     "unknown", "user_owned", "licensed", "public_domain_verified", "permission_confirmed", "not_permitted"
 ]
@@ -35,6 +36,7 @@ class SourceIn(BaseModel):
     rights_status: Rights = "user_owned"
     rights_note: str | None = Field(default=None, max_length=2000)
     enabled: bool = True
+    config: dict[str, Any] | None = None  # kind-specific, e.g. Creative Commons finder options
 
 
 class SourcePatch(BaseModel):
@@ -45,10 +47,11 @@ class SourcePatch(BaseModel):
     rights_status: Rights | None = None
     rights_note: str | None = Field(default=None, max_length=2000)
     enabled: bool | None = None
+    config: dict[str, Any] | None = None
 
 
 def _validate_url(kind: str, url: str | None) -> str | None:
-    if kind == "local_folder":
+    if kind in ("local_folder", "youtube_cc_search"):
         return None
     try:
         c = classify_url(url or "", direct_media_hosts=[], allow_feed=(kind == "rss"))
@@ -70,6 +73,24 @@ def _validate_url(kind: str, url: str | None) -> str | None:
     return c.canonical_url
 
 
+CC_RIGHTS_NOTE = (
+    "Creative Commons Attribution (CC BY) enligt YouTube, kontrollerad per video via Data API. "
+    "Upphovspersonen anges i beskrivningen."
+)
+
+
+def _cc_config(raw: dict[str, Any] | None) -> dict[str, Any]:
+    try:
+        cfg = CcSearchConfig.model_validate(raw or {})
+    except ValueError as e:
+        raise AppError(
+            ErrorCode.INVALID_INPUT, "Ogiltiga sökinställningar för Creative Commons-källan."
+        ) from e
+    if cfg.min_minutes >= cfg.max_minutes:
+        raise AppError(ErrorCode.INVALID_INPUT, "Minsta längd måste vara kortare än längsta.")
+    return cfg.model_dump()
+
+
 def _keywords(kws: list[str]) -> list[str]:
     return [k for k in (clean_text(x, 60) for x in kws) if k][:30]
 
@@ -87,7 +108,7 @@ def list_sources(_: Principal = Depends(require_user), db: Session = Depends(get
 def create(
     body: SourceIn, request: Request, _: Principal = Depends(require_user), db: Session = Depends(get_db)
 ) -> dict:
-    if body.kind == "youtube_channel" and not request.app.state.cfg.youtube_api_key:
+    if body.kind in ("youtube_channel", "youtube_cc_search") and not request.app.state.cfg.youtube_api_key:
         raise AppError(
             ErrorCode.INVALID_INPUT,
             "YouTube-kanaler kräver en API-nyckel (CLIPFORGE_YOUTUBE_API_KEY). "
@@ -96,6 +117,14 @@ def create(
     url = _validate_url(body.kind, body.url)
     if url and db.scalar(select(Source.id).where(Source.url == url)):
         raise AppError(ErrorCode.CONFLICT, "Källan finns redan.", status_code=409)
+    config: dict[str, Any] = {}
+    rights, rights_note = body.rights_status, clean_text(body.rights_note or "", 2000) or None
+    if body.kind == "youtube_cc_search":
+        if not _keywords(body.keywords):
+            raise AppError(ErrorCode.INVALID_INPUT, "Ange minst ett ämne att söka efter.")
+        config = _cc_config(body.config)
+        # Fixed on purpose: the finder only returns videos it verified as Creative Commons (CC BY).
+        rights, rights_note = "licensed", CC_RIGHTS_NOTE
     s = Source(
         kind=body.kind,
         name=clean_text(body.name, 200),
@@ -104,8 +133,9 @@ def create(
         polling_interval_minutes=body.polling_interval_minutes,
         category=clean_text(body.category or "", 100) or None,
         keywords_json=_keywords(body.keywords),
-        rights_status=body.rights_status,
-        rights_note=clean_text(body.rights_note or "", 2000) or None,
+        rights_status=rights,
+        rights_note=rights_note,
+        config_json=config,
     )
     db.add(s)
     db.flush()
@@ -133,8 +163,21 @@ def update(
 ) -> dict:
     s = _get(db, sid)
     data = body.model_dump(exclude_unset=True)
+    if s.kind == "youtube_cc_search":
+        if data.get("rights_status") not in (None, "licensed"):
+            raise AppError(
+                ErrorCode.INVALID_INPUT, "Rättigheterna för den här källtypen är fasta (licensed)."
+            )
+        data.pop("rights_status", None)
+        data.pop("rights_note", None)
+    if "config" in data:
+        cfg = data.pop("config")
+        if s.kind == "youtube_cc_search":
+            s.config_json = _cc_config({**(s.config_json or {}), **(cfg or {})})
     if "keywords" in data:
         s.keywords_json = _keywords(data.pop("keywords") or [])
+        if s.kind == "youtube_cc_search" and not s.keywords_json:
+            raise AppError(ErrorCode.INVALID_INPUT, "Ange minst ett ämne att söka efter.")
     for k, v in data.items():
         setattr(s, k, clean_text(v, 2000) if isinstance(v, str) else v)
     audit.record(db, "source.updated", actor="user", object_type="source", object_id=sid, details=data)

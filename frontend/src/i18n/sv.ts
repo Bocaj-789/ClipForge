@@ -215,6 +215,7 @@ export const sv = {
     kinds: {
       rss: "RSS/Atom-flöde (inkl. YouTube-kanalflöde)",
       youtube_channel: "YouTube-kanal via API",
+      youtube_cc_search: "Creative Commons-sökning på YouTube (ämnen)",
       local_folder: "Importmapp på datorn",
     } as Record<string, string>,
     name: "Namn",
@@ -261,6 +262,11 @@ export const sv = {
     revokePublic: "Stäng av offentlig publicering",
     edit: "Inställningar",
     limitsLead: "Gränser och standardvärden",
+    releaseSpacing: "Släpp klipp med mellanrum (minuter)",
+    releaseNow: "Direkt (tomt)",
+    releaseHelp:
+      "Automatiska klipp släpps offentligt med detta mellanrum: varje nytt klipp 2 h efter det senaste (120). Kräver tillåten offentlig publicering.",
+    releaseEvery: "Släpps var {minutes} min",
     perDay: "Max uppladdningar per dag",
     spacing: "Minsta tid mellan uppladdningar (min)",
     visibility: "Standardsynlighet",
