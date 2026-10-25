@@ -8,7 +8,6 @@ import {
   ConfirmButton,
   Notice,
   ReviewPill,
-  RightsPill,
   useToast,
 } from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
@@ -62,7 +61,6 @@ export default function ClipDetail() {
         <h1 style={{ fontSize: "var(--s-3)" }}>{c.title_suggestion}</h1>
         <div className="row">
           <ReviewPill status={c.review_status} />
-          {c.source && <RightsPill status={c.source.rights_status} />}
         </div>
       </header>
       <div className="detail">

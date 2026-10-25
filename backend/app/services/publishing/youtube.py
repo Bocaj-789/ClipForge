@@ -147,6 +147,9 @@ def _transport_error(e: httpx.HTTPError) -> YouTubeError:
     return YouTubeError("transient", f"Nätverksfel mot Google ({type(e).__name__}).")
 
 
+transport_error = _transport_error
+
+
 # ------------------------------------------------------------------ OAuth
 @dataclass(frozen=True)
 class OAuthClient:
@@ -327,6 +330,10 @@ class YouTubeApi:
         if resp.status_code >= 300:
             raise classify(resp)
         return _body(resp)
+
+    def get_json(self, path: str, params: dict[str, str], *, bucket: str = "units") -> dict[str, Any]:
+        """Authorised GET of any Data API list endpoint; the caller names the quota bucket it costs."""
+        return self._json(self._send("GET", f"{API_BASE}/{path}", bucket=bucket, params=params))
 
     # -- reads (1 quota unit each)
     def my_channel(self) -> ChannelInfo:

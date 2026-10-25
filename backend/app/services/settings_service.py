@@ -40,7 +40,14 @@ class AppSettings(BaseModel):
     default_polling_interval_minutes: int = Field(default=180, ge=15, le=7 * 24 * 60)
     max_discoveries_per_day: int = Field(default=200, ge=0, le=5000)
     allowed_source_kinds: list[str] = Field(
-        default_factory=lambda: ["manual_url", "youtube_channel", "rss", "local_folder", "permitted_feed"]
+        default_factory=lambda: [
+            "manual_url",
+            "youtube_channel",
+            "youtube_cc_search",
+            "rss",
+            "local_folder",
+            "permitted_feed",
+        ]
     )
     # Hosts from which direct media files may be fetched when rights are confirmed.
     allowed_direct_media_hosts: list[str] = Field(default_factory=lambda: ["archive.org"])
@@ -93,6 +100,8 @@ class AppSettings(BaseModel):
     # raise them only if Google granted your project more).
     youtube_daily_insert_limit: int = Field(default=100, ge=0, le=100_000)
     youtube_daily_unit_limit: int = Field(default=10_000, ge=0, le=10_000_000)
+    # search.list has its own Google bucket of 100 calls/day; keep most of it free for other uses.
+    youtube_daily_search_limit: int = Field(default=20, ge=0, le=100)
 
     # Remote access (informational toggle; the tunnel itself is configured outside the app)
     remote_access_enabled: bool = False
@@ -138,6 +147,11 @@ def load_settings(db: Session) -> AppSettings:
         return s
     merged = {**AppSettings().model_dump(), **(row.data_json or {})}
     known = set(AppSettings.model_fields)
+    # Source kinds are not user-editable; kinds added by newer versions must reach existing databases.
+    kinds = list(merged.get("allowed_source_kinds") or [])
+    merged["allowed_source_kinds"] = kinds + [
+        k for k in AppSettings().allowed_source_kinds if k not in kinds and k == "youtube_cc_search"
+    ]
     return AppSettings.model_validate({k: v for k, v in merged.items() if k in known})
 
 

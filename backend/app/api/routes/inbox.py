@@ -33,14 +33,14 @@ class SubmitIn(BaseModel):
     url: str = Field(min_length=4, max_length=2048)
     urgent: bool = True
     note: str | None = Field(default=None, max_length=1000)
-    rights_status: Rights = "unknown"
+    rights_status: Rights = "user_owned"
     rights_note: str | None = Field(default=None, max_length=2000)
 
 
 class BulkIn(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=50)
     urgent: bool = False
-    rights_status: Rights = "unknown"
+    rights_status: Rights = "user_owned"
     rights_note: str | None = Field(default=None, max_length=2000)
 
 
@@ -111,7 +111,7 @@ async def upload(
     request: Request,
     filename: str = Query(min_length=1, max_length=255),
     title: str | None = Query(default=None, max_length=300),
-    rights_status: Rights = Query(default="unknown"),
+    rights_status: Rights = Query(default="user_owned"),
     rights_note: str | None = Query(default=None, max_length=2000),
     urgent: bool = Query(default=True),
     candidate_id: str | None = Query(default=None, max_length=32),

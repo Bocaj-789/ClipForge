@@ -84,14 +84,6 @@ export const ReviewPill = ({ status }: { status: string }) => (
     {t.review[status] ?? status}
   </Pill>
 );
-export const RightsPill = ({ status }: { status: string }) => (
-  <Pill
-    tone={status === "unknown" || status === "not_permitted" ? "fail" : "done"}
-  >
-    {t.rights[status] ?? status}
-  </Pill>
-);
-
 export const PubPill = ({ status }: { status: string }) => (
   <Pill tone={PUB_TONE[status] ?? "muted"}>
     {t.publishing.status[status] ?? status}

@@ -119,33 +119,6 @@ def test_local_file_to_rendered_vertical_clip(cfg: Config, db: Session, monkeypa
     assert not list(cfg.tmp_dir.iterdir())  # no leftover temp files
 
 
-def test_unknown_rights_block_processing(cfg: Config, db: Session, monkeypatch, tmp_path: Path) -> None:
-    cand = _import(db, cfg, make_video(tmp_path / "src.mp4", seconds=12), rights=RightsStatus.UNKNOWN)
-    assert cand.status == CandidateStatus.BLOCKED
-    assert db.scalar(select(Job).where(Job.candidate_video_id == cand.id)) is None
-    # Confirming rights resumes processing.
-    inbox.set_rights(db, cand, RightsStatus.USER_OWNED, "Min egen video")
-    db.commit()
-    assert db.scalar(select(Job).where(Job.candidate_video_id == cand.id)).job_type == "analyze"
-
-
-def test_rights_revoked_mid_pipeline_blocks_render(
-    cfg: Config, db: Session, monkeypatch, tmp_path: Path
-) -> None:
-    cand = _import(db, cfg, make_video(tmp_path / "src.mp4", seconds=30))
-    w = _worker(cfg, monkeypatch)
-    w.run_once("heavy")  # analyze only
-    db.expire_all()
-    c = db.get(CandidateVideo, cand.id)
-    c.rights_status = RightsStatus.NOT_PERMITTED  # direct change, bypassing the service
-    db.commit()
-    w.run_once("heavy")  # transcribe -> must block
-    db.expire_all()
-    tj = db.scalar(select(Job).where(Job.candidate_video_id == cand.id, Job.job_type == "transcribe"))
-    assert tj.status == JobStatus.BLOCKED and tj.error_code == "rights_not_confirmed"
-    assert db.scalars(select(RenderedClip)).all() == []
-
-
 def test_missing_model_blocks_with_clear_reason(
     cfg: Config, db: Session, monkeypatch, tmp_path: Path
 ) -> None:

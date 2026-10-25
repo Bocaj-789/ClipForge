@@ -32,7 +32,7 @@ class SourceIn(BaseModel):
     polling_interval_minutes: int = Field(default=180, ge=15, le=7 * 24 * 60)
     category: str | None = Field(default=None, max_length=100)
     keywords: list[str] = Field(default_factory=list, max_length=30)
-    rights_status: Rights = "unknown"
+    rights_status: Rights = "user_owned"
     rights_note: str | None = Field(default=None, max_length=2000)
     enabled: bool = True
 

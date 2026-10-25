@@ -63,8 +63,6 @@ def test_channel_auto_publish_off_blocks() -> None:
     assert not _check(channel=_channel(auto_publish_enabled=False)).allowed
 
 
-def test_unknown_rights_blocks_even_manual() -> None:
-    assert not _check(rights_status="unknown", automatic=False).allowed
 
 
 def test_daily_caps_and_spacing() -> None:

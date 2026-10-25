@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { api, errorMessage } from "../api/client";
 import type { Candidate, Paged, Source } from "../api/types";
-import { RightsSelect } from "../components/RightsSelect";
-import { ConfirmButton, Empty, Notice, Pill, RightsPill, useToast } from "../components/ui";
+import { ConfirmButton, Empty, Notice, Pill, useToast } from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
 import { t } from "../i18n/sv";
 import { fmtRelative, fmtTime } from "../lib/format";
@@ -15,7 +14,6 @@ function AddSource({ onDone }: { onDone: () => void }) {
   const [interval, setIntervalMin] = useState(180);
   const [keywords, setKeywords] = useState("");
   const [category, setCategory] = useState("");
-  const [rights, setRights] = useState("unknown");
   const [error, setError] = useState<string | null>(null);
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -32,7 +30,6 @@ function AddSource({ onDone }: { onDone: () => void }) {
             .map((k) => k.trim())
             .filter(Boolean),
           category: category || null,
-          rights_status: rights,
         },
       });
       setName("");
@@ -91,10 +88,6 @@ function AddSource({ onDone }: { onDone: () => void }) {
           {t.discovery.category}
           <input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} />
         </label>
-        <label>
-          {t.inbox.rights}
-          <RightsSelect value={rights} onChange={setRights} />
-        </label>
       </div>
       <p className="help">
         {kind === "local_folder"
@@ -143,7 +136,6 @@ export default function Discovery() {
                   <span className="title-line">{s.name}</span>
                   <div className="row small muted">
                     <span>{t.discovery.kinds[s.kind]}</span>
-                    <RightsPill status={s.rights_status} />
                     {s.paused && <Pill tone="wait">{t.agent.paused}</Pill>}
                     <span>var {s.polling_interval_minutes} min</span>
                     <span>{s.candidates} videor</span>

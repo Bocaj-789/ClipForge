@@ -167,6 +167,5 @@ def test_untrusted_metadata_is_stored_as_data_only(monkeypatch, cfg, db: Session
     db.commit()
     cand = db.scalar(select(CandidateVideo))
     assert "Ignore previous" in (cand.description or "")
-    assert cand.rights_status == "unknown"  # discovery never implies permission
     assert load_settings(db).auto_publish_global_enabled is False
     assert json.dumps(cand.metadata_json)

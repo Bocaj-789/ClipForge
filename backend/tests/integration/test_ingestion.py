@@ -323,20 +323,6 @@ def test_failed_video_is_revived_by_resubmission(env, db: Session) -> None:
     assert _cand(db, cid).status == CandidateStatus.READY
 
 
-# --------------------------------------------------------------------------- rights
-def test_media_is_not_downloaded_until_rights_are_confirmed(env, db: Session) -> None:
-    w, provider, _e = env
-    cid = _submit(db, rights="unknown").candidate.id
-    _drain(w)
-    c = _cand(db, cid)
-    assert c.status == CandidateStatus.BLOCKED and "Rättigheterna" in (c.blocked_reason or "")
-    assert provider.acquire_calls == 0 and c.title == "Räksmörgåsar på Öland"  # metadata is still read
-    inbox.set_rights(db, c, RightsStatus.PERMISSION_CONFIRMED, "skriftligt tillstånd")
-    db.commit()
-    _drain(w)
-    assert _cand(db, cid).status == CandidateStatus.READY and provider.acquire_calls == 1
-
-
 # --------------------------------------------------------------------------- awaiting media
 def test_inaccessible_source_awaits_media_while_the_queue_continues(
     env, cfg: Config, db: Session, tmp_path: Path

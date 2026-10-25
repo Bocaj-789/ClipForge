@@ -2,9 +2,8 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import type { Candidate, Paged } from "../api/types";
-import { RightsSelect } from "../components/RightsSelect";
 import { UploadButton } from "../components/Upload";
-import { CandPill, Empty, JobPill, Notice, Progress, RightsPill, useToast } from "../components/ui";
+import { CandPill, Empty, JobPill, Notice, Progress, useToast } from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
 import { t } from "../i18n/sv";
 import { fmtDuration, fmtRelative } from "../lib/format";
@@ -28,7 +27,6 @@ export function CandidateRow({ c, onChange }: { c: Candidate; onChange: () => vo
         </Link>
         <div className="row small muted">
           <CandPill status={c.status} />
-          <RightsPill status={c.rights_status} />
           <span>{t.priority[c.priority]}</span>
           {c.creator_name && <span>{c.creator_name}</span>}
           {c.duration_seconds != null && <span className="num">{fmtDuration(c.duration_seconds)}</span>}
@@ -58,7 +56,7 @@ export function CandidateRow({ c, onChange }: { c: Candidate; onChange: () => vo
             Gör brådskande
           </button>
         )}
-        {!c.has_media && ["blocked", "awaiting_media"].includes(c.status) && c.rights_status !== "not_permitted" && (
+        {!c.has_media && ["blocked", "awaiting_media"].includes(c.status) && (
           <UploadButton
             label={t.inbox.attach}
             params={{ candidate_id: c.id }}
@@ -78,8 +76,6 @@ export default function Inbox() {
   const [url, setUrl] = useState("");
   const [urgent, setUrgent] = useState(true);
   const [note, setNote] = useState("");
-  const [rights, setRights] = useState("unknown");
-  const [rightsNote, setRightsNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const list = usePoll<Paged<Candidate>>((s) => api("/candidates?origin=manual&limit=100", { signal: s }), 4000);
@@ -90,7 +86,7 @@ export default function Inbox() {
     setFormError(null);
     try {
       const r = await api<{ duplicate: boolean; priority_raised: boolean }>("/inbox", {
-        body: { url, urgent, note: note || null, rights_status: rights, rights_note: rightsNote || null },
+        body: { url, urgent, note: note || null },
       });
       toast(r.duplicate ? (r.priority_raised ? t.inbox.duplicate : t.inbox.duplicateSame) : t.inbox.added);
       setUrl("");
@@ -103,11 +99,7 @@ export default function Inbox() {
     }
   }
 
-  const uploadParams = {
-    rights_status: rights,
-    urgent: String(urgent),
-    ...(rightsNote ? { rights_note: rightsNote } : {}),
-  };
+  const uploadParams = { urgent: String(urgent) };
   return (
     <div className="page">
       <header className="page-head">
@@ -115,7 +107,7 @@ export default function Inbox() {
         <p className="muted">{t.inbox.lead}</p>
       </header>
 
-      <form className="panel" onSubmit={submit} aria-describedby="rights-help">
+      <form className="panel" onSubmit={submit}>
         <label htmlFor="url">{t.inbox.url}</label>
         <div className="url-input">
           <input
@@ -140,21 +132,10 @@ export default function Inbox() {
         </label>
         <div className="form-grid">
           <label>
-            {t.inbox.rights}
-            <RightsSelect value={rights} onChange={setRights} />
-          </label>
-          <label>
-            {t.inbox.rightsNote}
-            <input value={rightsNote} onChange={(e) => setRightsNote(e.target.value)} maxLength={2000} />
-          </label>
-          <label>
             {t.inbox.note}
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
           </label>
         </div>
-        <p id="rights-help" className="help">
-          {t.inbox.rightsHelp}
-        </p>
         <p className="help">{t.inbox.youtubeNote}</p>
         <div className="spread">
           <span className="help">{t.inbox.uploadHelp}</span>

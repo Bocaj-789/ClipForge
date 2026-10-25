@@ -19,6 +19,7 @@ class SourceKind(StrEnum):
     RSS = "rss"
     PERMITTED_FEED = "permitted_feed"
     LOCAL_FOLDER = "local_folder"
+    YOUTUBE_CC_SEARCH = "youtube_cc_search"  # finds Creative Commons videos by topic
 
 
 class RightsStatus(StrEnum):
@@ -30,14 +31,9 @@ class RightsStatus(StrEnum):
     NOT_PERMITTED = "not_permitted"
 
 
-PERMITTED_RIGHTS = frozenset(
-    {
-        RightsStatus.USER_OWNED,
-        RightsStatus.LICENSED,
-        RightsStatus.PUBLIC_DOMAIN_VERIFIED,
-        RightsStatus.PERMISSION_CONFIRMED,
-    }
-)
+# Single-user personal tool: the owner handles rights themselves, so no status blocks processing
+# or publishing any more. The field is kept only as an optional label.
+PERMITTED_RIGHTS = frozenset(RightsStatus)
 
 
 class CandidateStatus(StrEnum):
@@ -140,9 +136,10 @@ class Source(Base):
     polling_interval_minutes: Mapped[int] = mapped_column(Integer, default=180)
     category: Mapped[str | None] = mapped_column(String(100))
     keywords_json: Mapped[list[str]] = mapped_column(JSON, default=list)
-    rights_status: Mapped[str] = mapped_column(String(32), default=RightsStatus.UNKNOWN)
+    rights_status: Mapped[str] = mapped_column(String(32), default=RightsStatus.USER_OWNED)
     rights_note: Mapped[str | None] = mapped_column(Text)
     cursor_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # kind-specific options
     next_check_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
@@ -175,7 +172,7 @@ class CandidateVideo(Base):
     discovered_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     priority: Mapped[int] = mapped_column(Integer, default=3)
     status: Mapped[str] = mapped_column(String(32), default=CandidateStatus.DISCOVERED)
-    rights_status: Mapped[str] = mapped_column(String(32), default=RightsStatus.UNKNOWN)
+    rights_status: Mapped[str] = mapped_column(String(32), default=RightsStatus.USER_OWNED)
     rights_note: Mapped[str | None] = mapped_column(Text)
     user_note: Mapped[str | None] = mapped_column(Text)
     transcript_status: Mapped[str] = mapped_column(String(32), default="none")

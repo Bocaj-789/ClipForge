@@ -23,6 +23,7 @@ from app.services.settings_service import AppSettings
 PT = ZoneInfo("America/Los_Angeles")
 INSERT = "insert"  # videos.insert calls: their own bucket (default 100/day, 1 per call)
 UNITS = "units"  # all other endpoints (default 10,000 units/day)
+SEARCH = "search"  # search.list calls: their own Google bucket (default 100/day, 1 per call)
 
 
 def pt_day(now: datetime | None = None) -> str:
@@ -37,7 +38,11 @@ def next_reset(now: datetime | None = None) -> datetime:
 
 
 def limit_for(settings: AppSettings, bucket: str) -> int:
-    return settings.youtube_daily_insert_limit if bucket == INSERT else settings.youtube_daily_unit_limit
+    if bucket == INSERT:
+        return settings.youtube_daily_insert_limit
+    if bucket == SEARCH:
+        return settings.youtube_daily_search_limit
+    return settings.youtube_daily_unit_limit
 
 
 def used(db: Session, bucket: str, now: datetime | None = None) -> int:
@@ -72,6 +77,11 @@ def status(db: Session, settings: AppSettings, now: datetime | None = None) -> d
             "used": used(db, INSERT, now),
             "limit": settings.youtube_daily_insert_limit,
             "remaining": remaining(db, settings, INSERT, now),
+        },
+        "search": {
+            "used": used(db, SEARCH, now),
+            "limit": settings.youtube_daily_search_limit,
+            "remaining": remaining(db, settings, SEARCH, now),
         },
         "units": {
             "used": used(db, UNITS, now),

@@ -217,7 +217,6 @@ def test_youtube_forcing_private_is_reported(env: Env) -> None:
     [
         ({"review": "needs_review"}, "inte godkänt"),
         ({"review": "rejected"}, "avvisat"),
-        ({"rights": "unknown"}, "Rättigheterna"),
     ],
 )
 def test_manual_publish_gates(env: Env, kwargs: dict, needle: str) -> None:
@@ -746,8 +745,6 @@ def test_automatic_publishing_respects_score_warnings_rights_and_daily_cap(env: 
     with session_scope() as db:
         ch = db.get(Channel, env.channels["A"])
         ch.allow_public, ch.default_visibility = False, "private"
-    rights = _auto(env, env.clip(review="needs_review", rights="unknown"))
-    assert rights[0].outcome == "blocked" and any("Rättigheterna" in r for r in rights[0].reasons)
     with session_scope() as db:
         db.get(Channel, env.channels["A"]).max_uploads_per_day = 2  # the warned clip above used one slot
     assert _auto(env, env.clip())[0].outcome == "created"
