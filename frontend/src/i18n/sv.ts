@@ -50,6 +50,7 @@ export const sv = {
     failed: "Misslyckades",
     cancelled: "Avbruten",
     blocked: "Blockerad",
+    awaiting_media: "Väntar på mediaåtkomst",
   } as Record<string, string>,
   candStatus: {
     discovered: "Upptäckt",
@@ -58,6 +59,7 @@ export const sv = {
     ready: "Klar",
     skipped: "Hoppad över",
     blocked: "Blockerad",
+    awaiting_media: "Väntar på mediaåtkomst",
     failed: "Misslyckades",
   } as Record<string, string>,
   rights: {
@@ -152,7 +154,7 @@ export const sv = {
     duplicateSame: "Den här videon fanns redan i kön.",
     added: "Tillagd i kön.",
     youtubeNote:
-      "YouTube-länkar ger metadata. Själva videofilen kan inte hämtas från YouTube på ett tillåtet sätt – bifoga originalfilen om materialet är ditt.",
+      "YouTube-länkar hämtas automatiskt när rättigheterna är bekräftade. Om YouTube inte lämnar ut videon (privat, inloggning, DRM, region) väntar jobbet på mediaåtkomst medan övriga köar vidare – bifoga då originalfilen.",
     empty: "Inkorgen är tom. Klistra in en länk ovan för att börja.",
     attach: "Bifoga fil",
     steps: "Steg: metadata → analys → transkribering → klippförslag → rendering → granskning",

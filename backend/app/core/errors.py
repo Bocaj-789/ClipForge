@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     UNSUPPORTED_URL = "unsupported_url"
     RIGHTS_NOT_CONFIRMED = "rights_not_confirmed"
     ACQUISITION_BLOCKED = "acquisition_blocked"
+    MEDIA_ACCESS_UNAVAILABLE = "media_access_unavailable"
     API_QUOTA_EXCEEDED = "api_quota_exceeded"
     API_AUTH_EXPIRED = "api_auth_expired"
     NETWORK_TIMEOUT = "network_timeout"
@@ -75,6 +76,7 @@ class JobError(Exception):
         transient: bool,
         retry_after: float | None = None,
         block: bool = False,
+        awaiting_media: bool = False,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -83,6 +85,9 @@ class JobError(Exception):
         self.retry_after = retry_after
         # ``block`` = needs user action (rights, missing model, missing media); not a failure.
         self.block = block
+        # ``awaiting_media`` = the source cannot deliver the media right now (private, sign-in
+        # required, DRM, provider missing...). The job parks in its own state so the queue moves on.
+        self.awaiting_media = awaiting_media
 
 
 def transient(code: ErrorCode, message: str, retry_after: float | None = None) -> JobError:
@@ -95,3 +100,7 @@ def permanent(code: ErrorCode, message: str) -> JobError:
 
 def blocked(code: ErrorCode, message: str) -> JobError:
     return JobError(code, message, transient=False, block=True)
+
+
+def awaiting_media(message: str, code: ErrorCode = ErrorCode.MEDIA_ACCESS_UNAVAILABLE) -> JobError:
+    return JobError(code, message, transient=False, awaiting_media=True)

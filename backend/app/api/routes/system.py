@@ -27,7 +27,7 @@ from app.db.models import (
 from app.schemas import serializers as ser
 from app.services import agent
 from app.services.intelligence.llm_provider import OllamaProvider
-from app.services.pipeline import default_engine
+from app.services.pipeline import default_engine, default_providers
 from app.services.rendering import ffmpeg
 from app.services.settings_service import load_settings
 from app.services.storage.manager import storage_status
@@ -62,6 +62,11 @@ def dependencies(
         },
         "ffmpeg": {"available": ok, "reason": reason, "version": ffmpeg.ffmpeg_version() if ok else None},
         "transcription": tr,
+        "media_providers": [
+            {"name": prov.name, "available": av, "reason": why}
+            for prov in default_providers(cfg, s)
+            for av, why in [prov.available()]
+        ],
         "llm": {"provider": s.llm_provider, "available": ollama_ok, "reason": ollama_reason},
         "youtube_api_key_configured": cfg.youtube_api_key is not None
         and bool(cfg.youtube_api_key.get_secret_value()),

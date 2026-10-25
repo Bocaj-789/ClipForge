@@ -7,16 +7,19 @@ from app.db.models import JobStatus, JobType
 S = JobStatus
 
 ALLOWED: dict[JobStatus, frozenset[JobStatus]] = {
-    S.PENDING: frozenset({S.RUNNING, S.CANCELLED, S.BLOCKED}),
-    S.RETRY_WAIT: frozenset({S.RUNNING, S.CANCELLED, S.PENDING, S.BLOCKED}),
-    S.RUNNING: frozenset({S.SUCCEEDED, S.FAILED, S.RETRY_WAIT, S.CANCELLED, S.BLOCKED}),
+    S.PENDING: frozenset({S.RUNNING, S.CANCELLED, S.BLOCKED, S.AWAITING_MEDIA}),
+    S.RETRY_WAIT: frozenset({S.RUNNING, S.CANCELLED, S.PENDING, S.BLOCKED, S.AWAITING_MEDIA}),
+    S.RUNNING: frozenset({S.SUCCEEDED, S.FAILED, S.RETRY_WAIT, S.CANCELLED, S.BLOCKED, S.AWAITING_MEDIA}),
     S.BLOCKED: frozenset({S.PENDING, S.CANCELLED}),
+    S.AWAITING_MEDIA: frozenset({S.PENDING, S.CANCELLED}),
     S.FAILED: frozenset({S.PENDING, S.CANCELLED}),
     S.CANCELLED: frozenset({S.PENDING}),
     S.SUCCEEDED: frozenset({S.PENDING}),  # explicit reprocess only
 }
 
 ACTIVE = frozenset({S.PENDING, S.RETRY_WAIT, S.RUNNING})
+# Parked until the user (or a provider change) supplies what is missing; never claimed by workers.
+WAITING = frozenset({S.BLOCKED, S.AWAITING_MEDIA})
 TERMINAL = frozenset({S.SUCCEEDED, S.FAILED, S.CANCELLED})
 
 

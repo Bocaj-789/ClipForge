@@ -15,7 +15,7 @@ from app.core.errors import AppError, ErrorCode, JobError, NotFound
 from app.core.security import redact
 from app.db.base import utcnow
 from app.db.models import Channel, Job, JobStatus, Source
-from app.services.queue.states import ACTIVE, LANE_FOR, assert_transition
+from app.services.queue.states import ACTIVE, LANE_FOR, WAITING, assert_transition
 
 BACKOFF_BASE_SECONDS = 30.0
 BACKOFF_CAP_SECONDS = 3600.0
@@ -186,6 +186,10 @@ def fail(db: Session, job: Job, err: BaseException, *, rng: random.Random | None
     if isinstance(err, JobError):
         job.error_code = err.code
         job.safe_error_message = redact(err.safe_message)[:1000]
+        if err.awaiting_media:
+            _transition(job, JobStatus.AWAITING_MEDIA)
+            job.finished_at = now
+            return
         if err.block:
             _transition(job, JobStatus.BLOCKED)
             job.finished_at = now
@@ -249,7 +253,7 @@ def request_cancel(db: Session, job_id: str) -> Job:
         raise NotFound("Jobbet")
     if job.status == JobStatus.RUNNING:
         job.cancel_requested = True
-    elif job.status in (JobStatus.PENDING, JobStatus.RETRY_WAIT, JobStatus.BLOCKED):
+    elif job.status in (JobStatus.PENDING, JobStatus.RETRY_WAIT, *WAITING):
         mark_cancelled(db, job)
     else:
         raise AppError(ErrorCode.CONFLICT, "Jobbet kan inte avbrytas i sitt nuvarande läge.", status_code=409)
@@ -257,11 +261,11 @@ def request_cancel(db: Session, job_id: str) -> Job:
 
 
 def manual_retry(db: Session, job_id: str) -> Job:
-    """User-initiated retry of a failed/blocked/cancelled job. Resets the attempt budget."""
+    """User-initiated retry of a failed/blocked/awaiting-media/cancelled job. Resets the attempt budget."""
     job = db.get(Job, job_id)
     if job is None:
         raise NotFound("Jobbet")
-    if job.status not in (JobStatus.FAILED, JobStatus.BLOCKED, JobStatus.CANCELLED, JobStatus.RETRY_WAIT):
+    if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.RETRY_WAIT, *WAITING):
         raise AppError(
             ErrorCode.CONFLICT,
             "Endast misslyckade, blockerade eller avbrutna jobb kan köras om.",
@@ -282,7 +286,7 @@ def raise_priority_for_candidate(db: Session, candidate_id: str, priority: int) 
     jobs = db.scalars(
         select(Job).where(
             Job.candidate_video_id == candidate_id,
-            Job.status.in_([JobStatus.PENDING, JobStatus.RETRY_WAIT, JobStatus.BLOCKED]),
+            Job.status.in_([JobStatus.PENDING, JobStatus.RETRY_WAIT, *WAITING]),
             Job.priority > priority,
         )
     ).all()

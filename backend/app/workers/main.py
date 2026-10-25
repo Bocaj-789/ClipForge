@@ -24,7 +24,7 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import Job, JobStatus, JobType, Source, WorkerHeartbeat
 from app.db.session import init_engine, new_session, session_scope
 from app.logging_config import setup_logging
-from app.services import agent, pipeline
+from app.services import agent, pipeline, workspace
 from app.services.discovery.adapters import LocalFolderAdapter, RssAdapter, YouTubeApiAdapter
 from app.services.queue import service as q
 from app.services.queue.states import DISK_HEAVY_TYPES, Priority
@@ -79,6 +79,11 @@ class Worker:
             _p, note = pipeline.default_provider(self.cfg, s)
             if note:
                 deg["llm"] = note
+        if s.youtube_media_provider != "off":
+            for prov in pipeline.default_providers(self.cfg, s):
+                ok_p, why = prov.available()
+                if not ok_p:
+                    deg["media_provider"] = why or f"{prov.name} är inte tillgänglig."
         storage = storage_status(self.cfg.data_dir, s)
         if storage.level == "critical":
             deg["storage"] = f"{storage.reason} Nya hämtningar och renderingar är pausade."
@@ -155,6 +160,7 @@ class Worker:
                 self.heartbeat()
                 with session_scope() as db:
                     q.recover_expired_leases(db)
+                    workspace.cleanup_orphans(db, self.cfg)
                     ctl = agent.get_control(db)
                     if ctl.desired_state == "draining" and not self.current:
                         agent.set_desired(db, "stopped", reason="Tömning klar.", actor="system")
@@ -279,12 +285,16 @@ class Worker:
                 log.warning("job %s: %s (%s)", job.id, e.safe_message, e.code, extra={"job_id": job.id})
             job = db.get(Job, job.id, populate_existing=True)
             q.fail(db, job, e)
-            if job.status in (JobStatus.FAILED, JobStatus.BLOCKED):
+            if job.status in (JobStatus.FAILED, JobStatus.BLOCKED, JobStatus.AWAITING_MEDIA):
                 pipeline.on_job_failed(db, job)
             db.commit()
         finally:
             with self._lock:
                 self.progress_state.pop(job.id, None)
+            try:
+                workspace.release(self.cfg, job)
+            except Exception:
+                log.exception("could not clean temp directory for job %s", job.id)
 
     def lease_loop(self) -> None:
         """Extend leases, persist progress and pick up cancel requests for running jobs."""
@@ -313,6 +323,8 @@ class Worker:
             # Our own previous incarnation's jobs (same host/pid reuse is rare) are recovered via lease.
             agent.get_control(db)
         cleanup_stale_temp(self.cfg.tmp_dir, older_than_seconds=3600)
+        with session_scope() as db:
+            workspace.cleanup_orphans(db, self.cfg)
         log.info("worker %s starting; recovered %s stale jobs", self.worker_id, recovered)
         self.check_health()
         self.heartbeat()

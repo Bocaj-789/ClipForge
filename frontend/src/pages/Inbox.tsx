@@ -58,7 +58,7 @@ export function CandidateRow({ c, onChange }: { c: Candidate; onChange: () => vo
             Gör brådskande
           </button>
         )}
-        {!c.has_media && c.status === "blocked" && c.rights_status !== "not_permitted" && (
+        {!c.has_media && ["blocked", "awaiting_media"].includes(c.status) && c.rights_status !== "not_permitted" && (
           <UploadButton
             label={t.inbox.attach}
             params={{ candidate_id: c.id }}

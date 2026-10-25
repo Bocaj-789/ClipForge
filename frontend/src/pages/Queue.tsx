@@ -9,7 +9,7 @@ import { fmtRelative, fmtTime } from "../lib/format";
 
 const FILTERS: [string, string][] = [
   ["pending,running,retry_wait", "Aktiva"],
-  ["failed,blocked", "Problem"],
+  ["failed,blocked,awaiting_media", "Problem"],
   ["succeeded", "Klara"],
   ["cancelled", "Avbrutna"],
   ["", t.queue.filterAll],
@@ -125,12 +125,12 @@ export default function Queue() {
                   <td style={{ maxWidth: 420 }}>{j.safe_error_message}</td>
                   <td>
                     <div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                      {["failed", "blocked", "cancelled", "retry_wait"].includes(j.status) && (
+                      {["failed", "blocked", "awaiting_media", "cancelled", "retry_wait"].includes(j.status) && (
                         <button className="small" onClick={() => act(j.id, "retry")}>
                           {t.common.retry}
                         </button>
                       )}
-                      {["pending", "retry_wait", "running", "blocked"].includes(j.status) && !j.cancel_requested && (
+                      {["pending", "retry_wait", "running", "blocked", "awaiting_media"].includes(j.status) && !j.cancel_requested && (
                         <button className="small ghost" onClick={() => act(j.id, "cancel")}>
                           {t.queue.cancel}
                         </button>

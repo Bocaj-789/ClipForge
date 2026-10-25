@@ -9,6 +9,7 @@ const JOB_TONE: Record<string, string> = {
   succeeded: "done",
   failed: "fail",
   blocked: "fail",
+  awaiting_media: "review",
   cancelled: "muted",
 };
 const CAND_TONE: Record<string, string> = {
@@ -18,6 +19,7 @@ const CAND_TONE: Record<string, string> = {
   ready: "done",
   skipped: "muted",
   blocked: "fail",
+  awaiting_media: "review",
   failed: "fail",
 };
 const REVIEW_TONE: Record<string, string> = { needs_review: "review", approved: "done", rejected: "muted" };

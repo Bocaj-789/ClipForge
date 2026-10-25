@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Config
-from app.core.errors import ErrorCode, JobError, blocked, permanent, transient
+from app.core.errors import ErrorCode, JobError, awaiting_media, blocked, permanent, transient
 from app.core.security import clean_text, contained_path, safe_filename
 from app.db.base import utcnow
 from app.db.models import (
@@ -37,6 +37,12 @@ from app.db.models import (
 )
 from app.services.acquisition import base as acq
 from app.services.acquisition.local_file import sha256_path
+from app.services.acquisition.provider import (
+    MediaProvider,
+    MediaRequest,
+    build_providers,
+    select_provider,
+)
 from app.services.audit import service as audit
 from app.services.discovery.base import DiscoveryResult
 from app.services.intelligence.candidate_extractor import sentences_from_segments, validate_range
@@ -46,12 +52,13 @@ from app.services.queue import service as q
 from app.services.queue.states import Priority
 from app.services.rendering.ffmpeg import Cancelled, probe
 from app.services.rendering.renderer import RenderRequest, render_clip
-from app.services.safe_fetch import FetchError, fetch_to_file
 from app.services.settings_service import AppSettings
 from app.services.storage.manager import has_free_space, invalidate_cache
+from app.services.transcription.audio import extract_audio
 from app.services.transcription.base import TranscriptionEngine
 from app.services.transcription.whisper_local import FasterWhisperEngine, TranscriptionCancelled
-from app.services.urls import UrlRejected
+from app.services.workspace import job_dir, job_workspace
+from app.services.workspace import remove as remove_workspace
 
 log = logging.getLogger("clipforge.pipeline")
 
@@ -74,6 +81,7 @@ class JobContext:
     engine_factory: Callable[[Config, AppSettings], TranscriptionEngine] | None = None
     provider_factory: Callable[[Config, AppSettings], tuple[ClipProvider, str | None]] | None = None
     discovery_factory: Callable[[Source], Any] | None = None
+    providers_factory: Callable[[Config, AppSettings], Sequence[MediaProvider]] | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -137,14 +145,26 @@ def default_provider(cfg: Config, s: AppSettings) -> tuple[ClipProvider, str | N
     return HeuristicProvider(), None
 
 
-def fetch_youtube_oembed(url: str) -> dict[str, Any]:
-    """Public, keyless oEmbed metadata (title/author/thumbnail) from a fixed YouTube endpoint."""
+def default_providers(cfg: Config, s: AppSettings) -> Sequence[MediaProvider]:
+    return build_providers(cfg, s)
+
+
+def _providers(ctx: JobContext) -> Sequence[MediaProvider]:
+    return (ctx.providers_factory or default_providers)(ctx.cfg, ctx.settings)
+
+
+def fetch_youtube_oembed(url: str) -> dict[str, Any] | None:
+    """Public, keyless oEmbed metadata (title/author/thumbnail) from a fixed YouTube endpoint.
+
+    Returns ``None`` when YouTube refuses (private, removed or embedding disabled); the media
+    provider's metadata and acquisition then decide what that means for the video.
+    """
     try:
         r = httpx.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"}, timeout=15)
     except httpx.HTTPError as e:
         raise transient(ErrorCode.NETWORK_TIMEOUT, "Kunde inte nå YouTube för metadata.") from e
     if r.status_code in (401, 403, 404):
-        raise permanent(ErrorCode.INVALID_INPUT, "Videon är privat, borttagen eller kan inte bäddas in.")
+        return None
     if r.status_code >= 400:
         raise transient(ErrorCode.NETWORK_TIMEOUT, f"YouTube svarade {r.status_code}.")
     data = r.json()
@@ -152,21 +172,71 @@ def fetch_youtube_oembed(url: str) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ handlers
+def _apply_oembed(cand: CandidateVideo, meta: dict[str, Any]) -> None:
+    cand.title = clean_text(str(meta.get("title", "")), 500) or cand.title
+    cand.creator_name = clean_text(str(meta.get("author_name", "")), 300) or cand.creator_name
+    thumb = str(meta.get("thumbnail_url", ""))
+    if thumb.startswith("https://i.ytimg.com/"):
+        cand.thumbnail_url = thumb
+
+
+def _park_awaiting_media(ctx: JobContext, cand: CandidateVideo, reason: str) -> JobError:
+    """Persist what we learned, then return the error that parks the job as awaiting media."""
+    cand.status = CandidateStatus.AWAITING_MEDIA
+    cand.blocked_reason = reason
+    ctx.db.commit()  # the worker rolls back on error; keep metadata gathered so far
+    return awaiting_media(reason)
+
+
 def handle_fetch_metadata(ctx: JobContext) -> dict[str, Any]:
     cand = _candidate(ctx)
+    providers = _providers(ctx)
+    meta_sources: list[str] = []
     if cand.platform == "youtube":
-        meta = fetch_youtube_oembed(cand.canonical_url)
-        cand.title = clean_text(str(meta.get("title", "")), 500) or cand.title
-        cand.creator_name = clean_text(str(meta.get("author_name", "")), 300) or cand.creator_name
-        thumb = str(meta.get("thumbnail_url", ""))
-        if thumb.startswith("https://i.ytimg.com/"):
-            cand.thumbnail_url = thumb
-        cand.metadata_json = {**(cand.metadata_json or {}), "oembed": True}
-    decision = acq.decide(cand, direct_media_hosts=ctx.settings.allowed_direct_media_hosts)
+        oembed = fetch_youtube_oembed(cand.canonical_url)
+        if oembed is not None:
+            _apply_oembed(cand, oembed)
+            meta_sources.append("oembed")
+    provider = select_provider(providers, cand.platform, cand.canonical_url)
+    live = False
+    if provider is not None and not cand.media_path:
+        pm = provider.fetch_metadata(cand.canonical_url)
+        if pm is not None:
+            cand.title = pm.title or cand.title
+            cand.creator_name = pm.creator_name or cand.creator_name
+            cand.creator_channel_id = pm.creator_channel_id or cand.creator_channel_id
+            cand.description = pm.description or cand.description
+            cand.published_at = pm.published_at or cand.published_at
+            cand.thumbnail_url = pm.thumbnail_url or cand.thumbnail_url
+            if pm.duration_seconds:
+                cand.duration_seconds = round(pm.duration_seconds, 3)
+            live = pm.is_live
+            meta_sources.append(provider.name)
+    if cand.platform == "youtube" and not meta_sources:
+        raise permanent(
+            ErrorCode.INVALID_INPUT, "Videon är privat, borttagen eller kan inte läsas av ClipForge."
+        )
+    cand.metadata_json = {**(cand.metadata_json or {}), "metadata_sources": meta_sources}
+    decision = acq.decide(cand, providers=providers)
+    if not decision.allowed and decision.awaiting_media:
+        raise _park_awaiting_media(ctx, cand, decision.reason or acq.NO_PROVIDER_MESSAGE)
     if not decision.allowed:
         cand.status = CandidateStatus.BLOCKED
         cand.blocked_reason = decision.reason
         return {"acquisition": "blocked", "reason": decision.reason}
+    if (
+        cand.duration_seconds
+        and not cand.media_path
+        and cand.duration_seconds > ctx.settings.max_input_duration_minutes * 60
+    ):
+        raise permanent(ErrorCode.MEDIA_TOO_LONG, "Videon är längre än tillåten maxlängd.")
+    if live:
+        raise _park_awaiting_media(
+            ctx,
+            cand,
+            "Videon är en direktsändning eller premiär som inte är klar än. "
+            "Försök igen när den har publicerats.",
+        )
     cand.status = CandidateStatus.QUEUED
     cand.blocked_reason = None
     nxt = JobType.ANALYZE if decision.method == "local_file" else JobType.ACQUIRE
@@ -174,52 +244,64 @@ def handle_fetch_metadata(ctx: JobContext) -> dict[str, Any]:
     return {"acquisition": decision.method}
 
 
+def _is_retryable(e: BaseException) -> bool:
+    return isinstance(e, JobError) and e.transient and not e.block and not e.awaiting_media
+
+
 def handle_acquire(ctx: JobContext) -> dict[str, Any]:
     cand = _candidate(ctx)
     _require_rights(cand)
-    decision = acq.decide(cand, direct_media_hosts=ctx.settings.allowed_direct_media_hosts)
+    decision = acq.decide(cand, providers=_providers(ctx))
     if not decision.allowed:
+        if decision.awaiting_media:
+            raise _park_awaiting_media(ctx, cand, decision.reason or acq.NO_PROVIDER_MESSAGE)
         raise blocked(ErrorCode.ACQUISITION_BLOCKED, decision.reason or "Hämtning blockerad.")
-    if decision.method == "local_file":
+    if decision.method == "local_file" or decision.provider is None:
         _next(ctx, JobType.ANALYZE, cand)
         return {"method": "local_file"}
-    max_bytes = ctx.settings.max_input_file_mb * 1024 * 1024
-    if not has_free_space(ctx.cfg.data_dir, ctx.settings, max_bytes // 4):
+    s = ctx.settings
+    max_bytes = s.max_input_file_mb * 1024 * 1024
+    if not has_free_space(ctx.cfg.data_dir, s, max_bytes // 4):
         raise transient(ErrorCode.DISK_FULL, "För lite diskutrymme för att hämta media.", retry_after=1800)
-    ctx.cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp = ctx.cfg.tmp_dir / safe_filename("dl", "part")
-    try:
-        ctx.progress(1, "hämtar")
-        fetch_to_file(
-            cand.canonical_url,
-            tmp,
-            max_bytes=max_bytes,
-            allowed_hosts=ctx.settings.allowed_direct_media_hosts,
-            timeout=60,
-            accept="video/*, audio/*",
-            on_progress=lambda n, total: ctx.progress(90 * n / total if total else 5, "hämtar"),
-            should_cancel=ctx.cancelled,
-        )
-        info = probe(tmp)
-        if info.duration > ctx.settings.max_input_duration_minutes * 60:
+    ctx.progress(1, "hämtar")
+    # Transient failures keep the workspace so a retry can resume partial files (see workspace.release).
+    with job_workspace(ctx.cfg, ctx.job.id, keep_if=_is_retryable) as ws:
+        try:
+            got = decision.provider.acquire(
+                MediaRequest(
+                    url=cand.canonical_url,
+                    platform=cand.platform,
+                    external_id=cand.external_id,
+                    workdir=ws,
+                    max_bytes=max_bytes,
+                    max_duration_seconds=s.max_input_duration_minutes * 60,
+                    max_height=s.youtube_max_height or None,
+                    progress=ctx.progress,
+                    cancelled=ctx.cancelled,
+                )
+            )
+        except JobError as e:
+            if e.awaiting_media:
+                raise _park_awaiting_media(ctx, cand, e.safe_message) from e
+            raise
+        info = probe(got.path)
+        if info.duration > s.max_input_duration_minutes * 60:
             raise permanent(ErrorCode.MEDIA_TOO_LONG, "Videon är längre än tillåten maxlängd.")
+        if not info.has_video:
+            raise permanent(ErrorCode.CORRUPT_MEDIA, "Hämtningen gav ingen videoström.")
         ext = "mp4" if "mp4" in info.format_name else ("webm" if "webm" in info.format_name else "mkv")
-        final = ctx.cfg.media_dir / safe_filename(cand.title or "video", ext)
+        final = ctx.cfg.media_dir / safe_filename(cand.title or got.title or "video", ext)
         final.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(tmp), final)
-    except FetchError as e:
-        if e.status is None or e.status == 429 or e.status >= 500:
-            raise transient(ErrorCode.NETWORK_TIMEOUT, str(e), retry_after=e.retry_after) from e
-        raise permanent(ErrorCode.ACQUISITION_BLOCKED, str(e)) from e
-    except UrlRejected as e:
-        raise permanent(ErrorCode.UNSUPPORTED_URL, str(e)) from e
-    finally:
-        tmp.unlink(missing_ok=True)  # never leave partial downloads
+        shutil.move(str(got.path), final)
     invalidate_cache()
+    if got.title and not cand.title:
+        cand.title = got.title
     cand.media_path = str(final.relative_to(ctx.cfg.data_dir))
     cand.media_checksum = sha256_path(final)
+    cand.duration_seconds = round(info.duration, 3)
+    cand.blocked_reason = None
     _next(ctx, JobType.ANALYZE, cand)
-    return {"method": "direct_http", "bytes": final.stat().st_size}
+    return {"method": got.provider, "bytes": final.stat().st_size, "provider": got.provider}
 
 
 def handle_analyze(ctx: JobContext) -> dict[str, Any]:
@@ -264,14 +346,29 @@ def handle_transcribe(ctx: JobContext) -> dict[str, Any]:
     cand.transcript_status = "running"
     lang = None if ctx.settings.transcription_language == "auto" else ctx.settings.transcription_language
     t0 = utcnow()
+    duration = cand.duration_seconds or 0
+    # ~2 MB per minute of 16 kHz mono PCM, plus headroom.
+    if not has_free_space(
+        ctx.cfg.data_dir, ctx.settings, int(duration / 60 * 2.2 * 1024 * 1024) + 50_000_000
+    ):
+        raise transient(ErrorCode.DISK_FULL, "För lite diskutrymme för att extrahera ljud.", retry_after=1800)
     try:
-        res = engine.transcribe(
-            path,
-            language=lang,
-            duration=cand.duration_seconds or 0,
-            on_progress=lambda p: ctx.progress(p, "transkriberar"),
-            should_cancel=ctx.cancelled,
-        )
+        with job_workspace(ctx.cfg, ctx.job.id, fresh=True) as ws:
+            ctx.progress(1, "extraherar ljud")
+            wav = extract_audio(
+                path,
+                ws / "audio.wav",
+                duration=duration or None,
+                on_progress=lambda p: ctx.progress(p * 0.08, "extraherar ljud"),
+                should_cancel=ctx.cancelled,
+            )
+            res = engine.transcribe(
+                wav,
+                language=lang,
+                duration=duration,
+                on_progress=lambda p: ctx.progress(8 + p * 0.92, "transkriberar"),
+                should_cancel=ctx.cancelled,
+            )
     except TranscriptionCancelled as e:
         raise Cancelled() from e
     if not res.segments:
@@ -433,8 +530,8 @@ def handle_render(ctx: JobContext) -> dict[str, Any]:
     style = opts.get("caption_style") or s.default_caption_style
     crop_mode = opts.get("crop_mode") or s.default_crop_mode
     stem = safe_filename((cand.title or "klipp")[:40], "mp4").rsplit(".", 1)[0]
-    work = ctx.cfg.tmp_dir / f"render-{ctx.job.id}"
-    shutil.rmtree(work, ignore_errors=True)
+    work = job_dir(ctx.cfg, ctx.job.id) / "render"
+    remove_workspace(ctx.cfg, ctx.job.id)  # start from a clean scratch directory
     req = RenderRequest(
         source=path,
         source_info=probe(path),
@@ -455,10 +552,11 @@ def handle_render(ctx: JobContext) -> dict[str, Any]:
     req.out_srt.parent.mkdir(parents=True, exist_ok=True)
     try:
         res = render_clip(req, on_progress=lambda p: ctx.progress(p, "renderar"), should_cancel=ctx.cancelled)
-    except Exception:
-        shutil.rmtree(work, ignore_errors=True)
+    except BaseException:
         req.out_srt.unlink(missing_ok=True)
         raise
+    finally:
+        remove_workspace(ctx.cfg, ctx.job.id)
     invalidate_cache()
     keywords, category = _keywords(ctx, cand)
     tags = suggest_hashtags(keywords, category)
@@ -587,6 +685,9 @@ def on_job_failed(db: Session, job: Job) -> None:
         return
     if job.status == "blocked":
         cand.status = CandidateStatus.BLOCKED
+        cand.blocked_reason = job.safe_error_message
+    elif job.status == "awaiting_media":
+        cand.status = CandidateStatus.AWAITING_MEDIA
         cand.blocked_reason = job.safe_error_message
     elif job.status == "failed" and job.job_type != JobType.RENDER:
         cand.status = CandidateStatus.FAILED

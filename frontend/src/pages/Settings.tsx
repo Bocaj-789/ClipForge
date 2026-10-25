@@ -30,6 +30,16 @@ const GROUPS: [string, Field[]][] = [
       { key: "max_input_file_mb", label: "Största videofil (MB)", kind: "int" },
       { key: "max_input_duration_minutes", label: "Längsta video (minuter)", kind: "int" },
       {
+        key: "youtube_media_provider",
+        label: "Hämta YouTube-video automatiskt",
+        kind: "select",
+        options: [
+          ["yt_dlp", "Ja, när rättigheterna är bekräftade (yt-dlp)"],
+          ["off", "Nej, bara metadata – jag bifogar filen"],
+        ],
+        help: "ClipForge kringgår aldrig inloggning, DRM eller andra begränsningar. Kan YouTube inte lämna ut videon väntar jobbet på mediaåtkomst.",
+      },
+      {
         key: "heavy_concurrency",
         label: "Tunga jobb samtidigt",
         kind: "int",

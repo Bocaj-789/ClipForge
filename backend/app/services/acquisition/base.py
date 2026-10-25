@@ -1,26 +1,27 @@
-"""Media acquisition policy. Deliberately strict: no downloaders for platforms without a
-documented, permitted media-access method; unknown rights never acquire automatically."""
+"""Media acquisition policy: *whether* media may be fetched and *which* provider does it.
+
+Rights come first. Media of unknown or forbidden rights is never acquired automatically. After
+that the decision is delegated to the registered :class:`MediaProvider` list, so supporting a new
+source never touches this module.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.db.models import PERMITTED_RIGHTS, CandidateVideo, RightsStatus
-from app.services.urls import host_allowed
+from app.services.acquisition.provider import MediaProvider, select_provider
 
 
 @dataclass(frozen=True)
 class AcquisitionDecision:
     allowed: bool
-    method: str | None  # local_file | direct_http
+    method: str | None  # "local_file" or a provider name (direct_http, yt_dlp, ...)
     reason: str | None
-
-
-YOUTUBE_RESTRICTION = (
-    "YouTube erbjuder inget officiellt API för att ladda ned videofiler, och ClipForge kringgår inte "
-    "plattformens villkor. Om det är ditt eget material: ladda ned originalet från YouTube Studio och "
-    "bifoga filen här."
-)
+    # True when rights are fine but no provider can deliver the media (user can attach a file).
+    awaiting_media: bool = False
+    provider: MediaProvider | None = None
 
 
 def rights_ok(rights_status: str) -> bool:
@@ -36,18 +37,21 @@ def rights_message(rights_status: str) -> str:
     )
 
 
-def decide(candidate: CandidateVideo, *, direct_media_hosts: list[str]) -> AcquisitionDecision:
+NO_PROVIDER_MESSAGE = (
+    "Ingen mediaprovider kan hämta den här källan. Bifoga videofilen, eller aktivera en provider under "
+    "Inställningar."
+)
+
+
+def decide(candidate: CandidateVideo, *, providers: Sequence[MediaProvider]) -> AcquisitionDecision:
     if not rights_ok(candidate.rights_status):
         return AcquisitionDecision(False, None, rights_message(candidate.rights_status))
     if candidate.media_path:
         return AcquisitionDecision(True, "local_file", None)
-    if candidate.platform == "youtube":
-        return AcquisitionDecision(False, None, YOUTUBE_RESTRICTION)
-    if candidate.platform == "direct":
-        from urllib.parse import urlsplit
-
-        host = urlsplit(candidate.canonical_url).hostname or ""
-        if host_allowed(host, direct_media_hosts):
-            return AcquisitionDecision(True, "direct_http", None)
-        return AcquisitionDecision(False, None, "Värden finns inte bland tillåtna mediavärdar.")
-    return AcquisitionDecision(False, None, "Ingen tillåten metod för att hämta media från denna källa.")
+    provider = select_provider(providers, candidate.platform, candidate.canonical_url)
+    if provider is None:
+        return AcquisitionDecision(False, None, NO_PROVIDER_MESSAGE, awaiting_media=True)
+    ok, reason = provider.available()
+    if not ok:
+        return AcquisitionDecision(False, None, reason or NO_PROVIDER_MESSAGE, awaiting_media=True)
+    return AcquisitionDecision(True, provider.name, None, provider=provider)

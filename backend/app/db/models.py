@@ -47,6 +47,7 @@ class CandidateStatus(StrEnum):
     READY = "ready"
     SKIPPED = "skipped"
     BLOCKED = "blocked"
+    AWAITING_MEDIA = "awaiting_media"  # rights are fine but no provider could deliver the media
     FAILED = "failed"
 
 
@@ -71,6 +72,7 @@ class JobStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     BLOCKED = "blocked"
+    AWAITING_MEDIA = "awaiting_media"  # needs media access (provider refused / unavailable)
 
 
 class ClipStatus(StrEnum):

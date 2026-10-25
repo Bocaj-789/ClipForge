@@ -63,3 +63,29 @@ return jobs to `retry_wait`. Daily render caps and shutdown use `defer`, which d
 Desired state (`running/paused/draining/stopped`) is stored in `agent_control`. Effective state adds worker
 liveness (heartbeat < 45 s) and degraded reasons (ffmpeg, model, Ollama, storage): `STOPPED` when no worker
 is alive, `DEGRADED` when running with problems, `ERROR` for fatal worker reports.
+
+## Video ingestion pipeline
+
+`POST /api/v1/inbox` (dashboard "Inkorg") → `fetch_metadata` → `acquire` → `analyze` → `transcribe` →
+`extract_clips` → `render`. Each stage is a persistent job; the next one is enqueued with the same priority.
+
+- **Priority**: user submissions get priority 0/1, creator updates 2, discovery 3. A repeat submission of a
+  known URL (any YouTube URL form) never creates a second record; it raises priority, adopts a discovered
+  video as manual, applies newly confirmed rights and revives failed/skipped videos.
+- **Media providers** (`services/acquisition/provider.py`): `MediaProvider` has `available`, `supports`,
+  `fetch_metadata`, `acquire`. Registered in `build_providers`: `direct_http` (allow-listed hosts) and
+  `yt_dlp` (single public YouTube videos, setting `youtube_media_provider`). Add a source by writing one
+  class and registering it. Providers run only after rights are confirmed and never use cookies, logins,
+  proxies or DRM tooling.
+- **Awaiting media access**: when a provider cannot deliver (private, sign-in/bot check, members-only,
+  age gate, region lock, DRM, live, no formats, provider missing/disabled) the job and video get status
+  `awaiting_media`. Such jobs are not claimed, so the queue continues. Attach the file in the dashboard or
+  press retry to resume.
+- **Temp files**: every job works in `data/tmp/job-<id>` (`services/workspace.py`), removed on success,
+  failure and cancel. A retryable download keeps its partial files for the resume; the worker sweeps
+  orphans every maintenance tick.
+- **Audio/transcription**: ffprobe validates the file, ffmpeg extracts 16 kHz mono WAV, faster-whisper
+  transcribes it locally with word timestamps (the WAV is passed as an array because faster-whisper 1.2.1
+  is incompatible with PyAV 19's file decoder).
+- **Clip selection**: `llm_provider=ollama` asks a local model for sentence ranges (validated against real
+  transcript boundaries); otherwise, or when Ollama is unavailable, the heuristic scorer is used.

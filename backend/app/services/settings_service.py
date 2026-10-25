@@ -49,6 +49,11 @@ class AppSettings(BaseModel):
     max_renders_per_day: int = Field(default=30, ge=0, le=1000)
     max_input_file_mb: int = Field(default=4096, ge=10, le=50_000)
     max_input_duration_minutes: int = Field(default=180, ge=1, le=24 * 60)
+    # Highest source resolution fetched from YouTube; 0 = best available (needs far more disk).
+    youtube_max_height: Literal[0, 480, 720, 1080, 1440, 2160] = 1080
+    # Media provider for YouTube videos whose rights the user has confirmed. "off" = metadata only;
+    # such videos wait for an uploaded file. Providers never bypass logins, DRM or other restrictions.
+    youtube_media_provider: Literal["yt_dlp", "off"] = "yt_dlp"
     heavy_concurrency: int = Field(default=1, ge=1, le=4)
     auto_render_top_n: int = Field(default=3, ge=0, le=20)
     low_resource_mode: bool = False

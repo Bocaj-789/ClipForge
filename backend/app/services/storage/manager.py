@@ -76,6 +76,19 @@ def has_free_space(data_dir: Path, settings: AppSettings, needed_bytes: int) -> 
     return du.free - needed_bytes > settings.min_free_disk_gb * 1024**3
 
 
+def newest_mtime(path: Path) -> float:
+    """Latest modification time inside a tree, so a directory with files still being written is fresh."""
+    latest = path.lstat().st_mtime
+    if path.is_dir() and not path.is_symlink():
+        for root, _dirs, files in path.walk():
+            for f in files:
+                try:
+                    latest = max(latest, (root / f).lstat().st_mtime)
+                except OSError:
+                    continue
+    return latest
+
+
 def cleanup_stale_temp(tmp_dir: Path, *, older_than_seconds: float = 6 * 3600) -> int:
     """Remove leftovers from interrupted downloads/renders. Only touches the tmp dir."""
     if not tmp_dir.exists():
@@ -84,7 +97,7 @@ def cleanup_stale_temp(tmp_dir: Path, *, older_than_seconds: float = 6 * 3600) -
     cutoff = time.time() - older_than_seconds
     for p in tmp_dir.iterdir():
         try:
-            if p.lstat().st_mtime < cutoff:
+            if newest_mtime(p) < cutoff:
                 if p.is_dir() and not p.is_symlink():
                     shutil.rmtree(p)
                 else:

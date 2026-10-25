@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
@@ -14,7 +15,7 @@ from app.services.acquisition.base import rights_message, rights_ok
 from app.services.acquisition.local_file import StoredMedia
 from app.services.audit import service as audit
 from app.services.queue import service as q
-from app.services.queue.states import Priority
+from app.services.queue.states import WAITING, Priority
 from app.services.settings_service import AppSettings
 from app.services.urls import UrlKind, UrlRejected, classify_url
 
@@ -31,9 +32,7 @@ def _priority(urgent: bool) -> int:
 
 
 def _cancel_blocked(db: Session, cand_id: str) -> None:
-    for j in db.scalars(
-        select(Job).where(Job.candidate_video_id == cand_id, Job.status == JobStatus.BLOCKED)
-    ):
+    for j in db.scalars(select(Job).where(Job.candidate_video_id == cand_id, Job.status.in_(list(WAITING)))):
         q.mark_cancelled(db, j)
 
 
@@ -72,22 +71,7 @@ def submit_url(
     pri = _priority(urgent)
     existing = db.scalar(select(CandidateVideo).where(CandidateVideo.canonical_url == c.canonical_url))
     if existing is not None:
-        raised = False
-        if pri < existing.priority:
-            existing.priority = pri
-            q.raise_priority_for_candidate(db, existing.id, pri)
-            raised = True
-        if note:
-            existing.user_note = clean_text(note, 1000)
-        audit.record(
-            db,
-            "inbox.duplicate",
-            actor="user",
-            object_type="candidate",
-            object_id=existing.id,
-            details={"priority_raised": raised},
-        )
-        return SubmitResult(existing, True, raised)
+        return _duplicate(db, existing, pri, note=note, rights_status=rights_status, rights_note=rights_note)
     cand = CandidateVideo(
         origin="manual_url",
         canonical_url=c.canonical_url,
@@ -99,8 +83,16 @@ def submit_url(
         user_note=clean_text(note or "", 1000) or None,
         status=CandidateStatus.QUEUED,
     )
-    db.add(cand)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(cand)
+            db.flush()
+    except IntegrityError:
+        # A concurrent submission of the same video won the unique constraint: treat as duplicate.
+        winner = db.scalar(select(CandidateVideo).where(CandidateVideo.canonical_url == c.canonical_url))
+        if winner is None:
+            raise
+        return _duplicate(db, winner, pri, note=note, rights_status=rights_status, rights_note=rights_note)
     q.enqueue(db, JobType.FETCH_METADATA, priority=pri, candidate_video_id=cand.id)
     audit.record(
         db,
@@ -111,6 +103,44 @@ def submit_url(
         details={"platform": c.platform, "urgent": urgent, "rights": rights_status},
     )
     return SubmitResult(cand, False, False)
+
+
+def _duplicate(
+    db: Session,
+    existing: CandidateVideo,
+    pri: int,
+    *,
+    note: str | None,
+    rights_status: str,
+    rights_note: str | None,
+) -> SubmitResult:
+    """A URL that is already known: never create a second record or job.
+
+    The user's submission still counts: it raises priority, adopts an auto-discovered video as a
+    manual one, applies newly confirmed rights and revives a failed or skipped video.
+    """
+    raised = False
+    if pri < existing.priority:
+        existing.priority = pri
+        q.raise_priority_for_candidate(db, existing.id, pri)
+        raised = True
+    if existing.origin == "discovery":
+        existing.origin = "manual_url"
+    if note:
+        existing.user_note = clean_text(note, 1000)
+    if rights_ok(rights_status) and not rights_ok(existing.rights_status):
+        set_rights(db, existing, rights_status, rights_note)
+    elif existing.status in (CandidateStatus.FAILED, CandidateStatus.SKIPPED):
+        resume_pipeline(db, existing)
+    audit.record(
+        db,
+        "inbox.duplicate",
+        actor="user",
+        object_type="candidate",
+        object_id=existing.id,
+        details={"priority_raised": raised},
+    )
+    return SubmitResult(existing, True, raised)
 
 
 def import_file(
@@ -184,7 +214,11 @@ def set_rights(db: Session, cand: CandidateVideo, rights_status: str, note: str 
         object_id=cand.id,
         details={"from": prev, "to": rights_status},
     )
-    if rights_ok(cand.rights_status) and cand.status in (CandidateStatus.BLOCKED, CandidateStatus.DISCOVERED):
+    if rights_ok(cand.rights_status) and cand.status in (
+        CandidateStatus.BLOCKED,
+        CandidateStatus.AWAITING_MEDIA,
+        CandidateStatus.DISCOVERED,
+    ):
         resume_pipeline(db, cand)
     elif not rights_ok(cand.rights_status):
         for j in db.scalars(

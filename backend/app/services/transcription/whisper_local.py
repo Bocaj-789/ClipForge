@@ -26,6 +26,23 @@ class _Cancelled(Exception):
     pass
 
 
+def load_wav_16k_mono(path: Path) -> Any:
+    """Read the 16 kHz mono PCM WAV written by ``extract_audio`` as float32 samples in [-1, 1].
+
+    Whisper then needs no media decoder of its own (faster-whisper 1.2.1 calls a PyAV option that
+    PyAV 19 removed), and FFmpeg stays the single place where audio is extracted.
+    """
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(path), "rb") as w:
+        if w.getnchannels() != 1 or w.getframerate() != 16000 or w.getsampwidth() != 2:
+            raise ValueError("expected 16 kHz mono 16-bit PCM")
+        raw = w.readframes(w.getnframes())
+    return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+
+
 def _version() -> str:
     try:
         from importlib.metadata import version
@@ -113,8 +130,9 @@ class FasterWhisperEngine:
     ) -> TranscriptResult:
         model = self._load()
         try:
+            audio = load_wav_16k_mono(path) if path.suffix.lower() == ".wav" else str(path)
             seg_iter, info = model.transcribe(
-                str(path),
+                audio,
                 language=language,
                 word_timestamps=True,
                 vad_filter=True,

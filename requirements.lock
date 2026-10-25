@@ -79,3 +79,5 @@ uvicorn==0.54.0
 uvloop==0.23.0
 watchfiles==1.3.0
 websockets==17.3
+yt-dlp==2026.10.21
+yt-dlp-ejs==0.8.0
