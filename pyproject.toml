@@ -1,0 +1,60 @@
+[project]
+name = "clipforge"
+version = "0.1.0"
+description = "Local-first short-form clip discovery, editing and publishing system"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+# Exact pins live in requirements.lock (generated with `pip freeze`).
+dependencies = [
+  "fastapi==0.162.0",
+  "uvicorn[standard]==0.54.0",
+  "SQLAlchemy==2.1.6",
+  "alembic==1.20.1",
+  "pydantic==2.14.1",
+  "pydantic-settings==2.16.1",
+  "argon2-cffi==25.1.0",
+  "httpx==0.28.1",
+  "python-multipart==0.0.32",
+  "tzdata==2026.5",
+  "pillow==13.0.0",
+  "faster-whisper==1.2.1",
+  "google-auth==2.62.0",
+  "google-auth-oauthlib==1.5.0",
+  "google-api-python-client==2.201.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "ruff==0.17.2", "mypy==2.4.0"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["backend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "S603", "B008", "SIM105", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["S104", "S105", "S106", "S108", "S311", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+markers = [
+  "ffmpeg: requires ffmpeg/ffprobe on PATH",
+  "whisper_model: requires a downloaded local Whisper model (opt-in)",
+  "ollama: requires a running local Ollama server (opt-in)",
+]
+addopts = "-q -m 'not whisper_model and not ollama'"
+# Pipeline tests write real videos; don't let old runs pile up on a small disk.
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "backend"
+ignore_missing_imports = true
+check_untyped_defs = true
