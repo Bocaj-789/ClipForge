@@ -7,7 +7,10 @@ type Val = string | number | boolean | string[] | null;
 type Settings = Record<string, Val>;
 interface Resp {
   settings: Settings;
-  transcription_models: Record<string, { size: string; ram: string; note: string }>;
+  transcription_models: Record<
+    string,
+    { size: string; ram: string; note: string }
+  >;
   confirm_required: string[];
 }
 type Field = {
@@ -24,11 +27,27 @@ const GROUPS: [string, Field[]][] = [
     G.processing,
     [
       { key: "discovery_enabled", label: "Automatisk upptäckt", kind: "bool" },
-      { key: "max_discoveries_per_day", label: "Max kontroller av källor per dygn", kind: "int" },
-      { key: "max_renders_per_day", label: "Max renderingar per dag", kind: "int" },
-      { key: "auto_render_top_n", label: "Rendera automatiskt de bästa N förslagen per video", kind: "int" },
+      {
+        key: "max_discoveries_per_day",
+        label: "Max kontroller av källor per dygn",
+        kind: "int",
+      },
+      {
+        key: "max_renders_per_day",
+        label: "Max renderingar per dag",
+        kind: "int",
+      },
+      {
+        key: "auto_render_top_n",
+        label: "Rendera automatiskt de bästa N förslagen per video",
+        kind: "int",
+      },
       { key: "max_input_file_mb", label: "Största videofil (MB)", kind: "int" },
-      { key: "max_input_duration_minutes", label: "Längsta video (minuter)", kind: "int" },
+      {
+        key: "max_input_duration_minutes",
+        label: "Längsta video (minuter)",
+        kind: "int",
+      },
       {
         key: "youtube_media_provider",
         label: "Hämta YouTube-video automatiskt",
@@ -93,8 +112,16 @@ const GROUPS: [string, Field[]][] = [
           ["fit_blur", "Hela bilden på suddig bakgrund"],
         ],
       },
-      { key: "loudness_normalization", label: "Normalisera ljudnivå", kind: "bool" },
-      { key: "caption_font_path", label: "Typsnittsfil för undertexter (valfri)", kind: "text" },
+      {
+        key: "loudness_normalization",
+        label: "Normalisera ljudnivå",
+        kind: "bool",
+      },
+      {
+        key: "caption_font_path",
+        label: "Typsnittsfil för undertexter (valfri)",
+        kind: "text",
+      },
     ],
   ],
   [
@@ -137,7 +164,11 @@ const GROUPS: [string, Field[]][] = [
         kind: "text",
         help: "Måste redan vara installerad med ollama pull. Inget laddas ned automatiskt.",
       },
-      { key: "learning_enabled", label: "Lär av statistik (när den finns)", kind: "bool" },
+      {
+        key: "learning_enabled",
+        label: "Lär av statistik (när den finns)",
+        kind: "bool",
+      },
     ],
   ],
   [
@@ -145,8 +176,16 @@ const GROUPS: [string, Field[]][] = [
     [
       { key: "storage_budget_gb", label: "Lagringsbudget (GB)", kind: "float" },
       { key: "storage_warn_percent", label: "Varna vid (%)", kind: "int" },
-      { key: "storage_critical_percent", label: "Pausa hämtning/rendering vid (%)", kind: "int" },
-      { key: "min_free_disk_gb", label: "Minsta lediga diskutrymme (GB)", kind: "float" },
+      {
+        key: "storage_critical_percent",
+        label: "Pausa hämtning/rendering vid (%)",
+        kind: "int",
+      },
+      {
+        key: "min_free_disk_gb",
+        label: "Minsta lediga diskutrymme (GB)",
+        kind: "float",
+      },
       { key: "timezone", label: "Tidszon", kind: "text" },
     ],
   ],
@@ -155,11 +194,28 @@ const GROUPS: [string, Field[]][] = [
     [
       {
         key: "auto_publish_global_enabled",
-        label: "Tillåt automatisk publicering (huvudbrytare)",
+        label: "Publicera färdiga klipp automatiskt (huvudbrytare)",
         kind: "bool",
-        help: "Varje kanal måste också slå på det. Uppladdning är inte byggd ännu.",
+        help: "Varje färdigt klipp laddas upp till alla anslutna kanaler som är med i automatisk publicering. Privat om du inte tillåtit offentlig publicering för kanalen.",
       },
-      { key: "max_uploads_per_day_global", label: "Max uppladdningar per dag, alla kanaler", kind: "int" },
+      {
+        key: "max_uploads_per_day_global",
+        label: "Max automatiska uppladdningar per dag, alla kanaler",
+        kind: "int",
+        help: "Räknas per kanal och klipp: 3 kanaler × 4 klipp = 12.",
+      },
+      {
+        key: "youtube_daily_insert_limit",
+        label: "Lokal gräns för YouTube-uppladdningar per dygn (API-kvot)",
+        kind: "int",
+        help: "Googles standard är 100 per dygn och projekt. Nollställs vid midnatt Pacific Time.",
+      },
+      {
+        key: "youtube_daily_unit_limit",
+        label: "Lokal gräns för övriga YouTube-anrop (enheter per dygn)",
+        kind: "int",
+        help: "Googles standard är 10 000 enheter.",
+      },
     ],
   ],
   [
@@ -190,17 +246,27 @@ export default function Settings() {
       })
       .catch((e) => setError(errorMessage(e)));
   }, []);
-  if (!resp) return <div className="page">{error ? <Notice tone="fail">{error}</Notice> : t.common.loading}</div>;
+  if (!resp)
+    return (
+      <div className="page">
+        {error ? <Notice tone="fail">{error}</Notice> : t.common.loading}
+      </div>
+    );
 
   const changes = Object.fromEntries(
-    Object.entries(draft).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(resp.settings[k])),
+    Object.entries(draft).filter(
+      ([k, v]) => JSON.stringify(v) !== JSON.stringify(resp.settings[k]),
+    ),
   );
   const risky = resp.confirm_required.filter((k) => changes[k] === true);
 
   async function save(confirm?: string) {
     setError(null);
     try {
-      const r = await api<Resp>("/settings", { method: "PATCH", body: { changes, confirm } });
+      const r = await api<Resp>("/settings", {
+        method: "PATCH",
+        body: { changes, confirm },
+      });
       setResp(r);
       setDraft(r.settings);
       toast(t.settings.saved);
@@ -218,21 +284,34 @@ export default function Settings() {
     if (f.kind === "bool")
       return (
         <label className="check" htmlFor={id}>
-          <input id={id} type="checkbox" checked={Boolean(v)} onChange={(e) => set(f.key, e.target.checked)} />
+          <input
+            id={id}
+            type="checkbox"
+            checked={Boolean(v)}
+            onChange={(e) => set(f.key, e.target.checked)}
+          />
           {f.label}
         </label>
       );
     const options =
       f.key === "transcription_model"
         ? Object.entries(resp.transcription_models).map(
-            ([k, m]) => [k, `${k} (${m.size}, ${m.ram} RAM) ${m.note}`] as [string, string],
+            ([k, m]) =>
+              [k, `${k} (${m.size}, ${m.ram} RAM) ${m.note}`] as [
+                string,
+                string,
+              ],
           )
         : f.options;
     return (
       <label htmlFor={id}>
         {f.label}
         {f.kind === "select" ? (
-          <select id={id} value={String(v)} onChange={(e) => set(f.key, e.target.value)}>
+          <select
+            id={id}
+            value={String(v)}
+            onChange={(e) => set(f.key, e.target.value)}
+          >
             {options?.map(([k, l]) => (
               <option key={k} value={k}>
                 {l}
@@ -244,7 +323,11 @@ export default function Settings() {
             id={id}
             type={f.kind === "int" || f.kind === "float" ? "number" : "text"}
             step={f.kind === "float" ? "0.5" : undefined}
-            value={f.kind === "list" ? ((v as string[]) ?? []).join(", ") : String(v ?? "")}
+            value={
+              f.kind === "list"
+                ? ((v as string[]) ?? []).join(", ")
+                : String(v ?? "")
+            }
             onChange={(e) =>
               set(
                 f.key,
@@ -257,7 +340,8 @@ export default function Settings() {
                           .split(",")
                           .map((x) => x.trim())
                           .filter(Boolean)
-                      : e.target.value || (f.key === "caption_font_path" ? null : ""),
+                      : e.target.value ||
+                        (f.key === "caption_font_path" ? null : ""),
               )
             }
           />
@@ -297,12 +381,28 @@ export default function Settings() {
         ))}
         <div
           className="row"
-          style={{ position: "sticky", bottom: 0, background: "var(--ground)", padding: "0.75rem 0" }}
+          style={{
+            position: "sticky",
+            bottom: 0,
+            background: "var(--ground)",
+            padding: "0.75rem 0",
+          }}
         >
-          <button className="primary" type="submit" disabled={Object.keys(changes).length === 0}>
-            {t.common.save} {Object.keys(changes).length ? `(${Object.keys(changes).length})` : ""}
+          <button
+            className="primary"
+            type="submit"
+            disabled={Object.keys(changes).length === 0}
+          >
+            {t.common.save}{" "}
+            {Object.keys(changes).length
+              ? `(${Object.keys(changes).length})`
+              : ""}
           </button>
-          <button type="button" onClick={() => setDraft(resp.settings)} disabled={Object.keys(changes).length === 0}>
+          <button
+            type="button"
+            onClick={() => setDraft(resp.settings)}
+            disabled={Object.keys(changes).length === 0}
+          >
             Ångra ändringar
           </button>
           <button
@@ -310,7 +410,9 @@ export default function Settings() {
             className="ghost"
             onClick={async () => {
               try {
-                const r = await api<{ name: string }>("/settings/backup", { method: "POST" });
+                const r = await api<{ name: string }>("/settings/backup", {
+                  method: "POST",
+                });
                 toast(`${t.settings.backupDone}: data/backups/${r.name}`);
               } catch (e) {
                 toast(errorMessage(e), "fail");
@@ -333,18 +435,29 @@ export default function Settings() {
           <p>{t.settings.confirmRisky}</p>
           <ul>
             {risky.map((k) => (
-              <li key={k}>{GROUPS.flatMap(([, f]) => f).find((f) => f.key === k)?.label ?? k}</li>
+              <li key={k}>
+                {GROUPS.flatMap(([, f]) => f).find((f) => f.key === k)?.label ??
+                  k}
+              </li>
             ))}
           </ul>
           <label>
             Skriv JA
-            <input value={phrase} onChange={(e) => setPhrase(e.target.value)} autoFocus />
+            <input
+              value={phrase}
+              onChange={(e) => setPhrase(e.target.value)}
+              autoFocus
+            />
           </label>
           <div className="row" style={{ justifyContent: "flex-end" }}>
             <button type="button" onClick={() => dlg.current?.close()}>
               {t.common.cancel}
             </button>
-            <button type="submit" className="danger solid" disabled={phrase.trim().toUpperCase() !== "JA"}>
+            <button
+              type="submit"
+              className="danger solid"
+              disabled={phrase.trim().toUpperCase() !== "JA"}
+            >
               {t.common.save}
             </button>
           </div>

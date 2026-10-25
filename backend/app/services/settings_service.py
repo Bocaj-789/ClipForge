@@ -88,7 +88,11 @@ class AppSettings(BaseModel):
 
     # Publishing (deterministic policy, never controlled by a model)
     auto_publish_global_enabled: bool = False
-    max_uploads_per_day_global: int = Field(default=3, ge=0, le=100)
+    max_uploads_per_day_global: int = Field(default=30, ge=0, le=100)
+    # Local guard rails for the YouTube Data API quota (Google's defaults; lower them to keep headroom,
+    # raise them only if Google granted your project more).
+    youtube_daily_insert_limit: int = Field(default=100, ge=0, le=100_000)
+    youtube_daily_unit_limit: int = Field(default=10_000, ge=0, le=10_000_000)
 
     # Remote access (informational toggle; the tunnel itself is configured outside the app)
     remote_access_enabled: bool = False

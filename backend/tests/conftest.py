@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.config import Config
 from app.db.migrate import upgrade_to_head
 from app.db.session import init_engine, new_session
+from app.services.publishing.deps import PublishDeps
+from app.services.publishing.secret_store import MemoryStore
+from tests.fake_google import FakeGoogle
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 requires_ffmpeg = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
@@ -58,6 +61,52 @@ def login(client: TestClient, cfg: Config) -> dict[str, str]:
 @pytest.fixture
 def authed(client: TestClient, cfg: Config) -> tuple[TestClient, dict[str, str]]:
     return client, login(client, cfg)
+
+
+# ---------------------------------------------------------------- publishing fixtures
+@pytest.fixture
+def google() -> FakeGoogle:
+    return FakeGoogle()
+
+
+@pytest.fixture
+def pub_cfg(tmp_path: Path) -> Config:
+    c = Config(
+        data_dir=tmp_path / "data",
+        google_client_id="test-client.apps.googleusercontent.com",
+        google_client_secret="test-client-secret-value",  # type: ignore[arg-type]
+        token_store="file",
+    )
+    c.ensure_dirs()
+    return c
+
+
+@pytest.fixture
+def pdeps(pub_cfg: Config, google: FakeGoogle) -> PublishDeps:
+    sleeps: list[float] = []  # backoff waits are recorded, never slept
+    deps = PublishDeps(
+        cfg=pub_cfg,
+        store=MemoryStore(),
+        http_factory=google.client,
+        chunk_size=256 * 1024,
+        sleep=sleeps.append,
+    )
+    deps.sleeps = sleeps  # type: ignore[attr-defined]
+    return deps
+
+
+@pytest.fixture
+def pclient(pub_cfg: Config, pdeps: PublishDeps) -> Iterator[TestClient]:
+    from app.main import create_app
+
+    app = create_app(pub_cfg, configure_logging=False, publish_deps=pdeps)
+    with TestClient(app, base_url="http://127.0.0.1:8000") as c:
+        yield c
+
+
+@pytest.fixture
+def pauthed(pclient: TestClient, pub_cfg: Config) -> tuple[TestClient, dict[str, str]]:
+    return pclient, login(pclient, pub_cfg)
 
 
 def make_video(path: Path, seconds: float = 40, size: str = "1280x720", audio: bool = True) -> Path:

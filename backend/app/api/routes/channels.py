@@ -1,23 +1,27 @@
-"""Channel configuration. OAuth connection and uploads are a later milestone (not implemented)."""
+"""Channel configuration, connection state and per-channel upload history.
+
+Connecting a channel (Google OAuth) lives in ``routes/oauth.py``; this module never touches tokens.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Principal, get_db, require_user
 from app.core.errors import AppError, ErrorCode, NotFound
 from app.core.security import clean_text
 from app.db.base import utcnow
-from app.db.models import Channel, Publication
+from app.db.models import Channel, ConnectionState, Job, Publication
 from app.schemas import serializers as ser
 from app.services.audit import service as audit
-from app.services.publishing.policy import AUTO_PUBLISH_CONFIRM_PHRASE, next_slot
+from app.services.publishing import oauth
+from app.services.publishing.policy import ALLOW_PUBLIC_CONFIRM_PHRASE, next_slot
 from app.services.settings_service import validate_timezone
 
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -61,6 +65,10 @@ class ChannelIn(BaseModel):
     max_clip_seconds: int = Field(default=60, ge=5, le=600)
     late_policy: Literal["next_slot", "skip"] = "next_slot"
     enabled: bool = True
+    category_id: str = Field(default="22", pattern=r"^\d{1,3}$")
+    made_for_kids: bool = False
+    notify_subscribers: bool = False
+    auto_publish_min_score: float = Field(default=60.0, ge=0, le=100)
 
     @field_validator("timezone")
     @classmethod
@@ -86,11 +94,19 @@ class ChannelPatch(BaseModel):
     late_policy: Literal["next_slot", "skip"] | None = None
     enabled: bool | None = None
     paused: bool | None = None
+    category_id: str | None = Field(default=None, pattern=r"^\d{1,3}$")
+    made_for_kids: bool | None = None
+    notify_subscribers: bool | None = None
+    auto_publish_min_score: float | None = Field(default=None, ge=0, le=100)
 
 
 class AutoPublishIn(BaseModel):
     enabled: bool
     confirm_phrase: str | None = Field(default=None, max_length=100)
+
+
+class AllowPublicIn(AutoPublishIn):
+    pass
 
 
 def _apply(c: Channel, data: dict) -> None:
@@ -115,6 +131,11 @@ def _apply(c: Channel, data: dict) -> None:
         setattr(c, k, clean_text(v, 3000) if isinstance(v, str) and k != "description_template" else v)
     if c.min_clip_seconds >= c.max_clip_seconds:
         raise AppError(ErrorCode.INVALID_INPUT, "Minsta klipplängd måste vara kortare än längsta.")
+    if c.default_visibility == "public" and not c.allow_public:
+        raise AppError(
+            ErrorCode.INVALID_INPUT,
+            "Offentlig standardsynlighet kräver att offentlig publicering först tillåts för kanalen.",
+        )
 
 
 def _out(c: Channel) -> dict:
@@ -123,18 +144,28 @@ def _out(c: Channel) -> dict:
 
 
 @router.get("")
-def list_channels(_: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
+def list_channels(
+    request: Request, _: Principal = Depends(require_user), db: Session = Depends(get_db)
+) -> dict:
+    deps = request.app.state.publish_deps
+    ok, why = deps.store.available()
+    configured = deps.oauth_client() is not None
     return {
         "items": [_out(c) for c in db.scalars(select(Channel).order_by(Channel.created_at))],
-        "oauth_status": "planned",
-        "oauth_note": "YouTube-anslutning via OAuth och uppladdning är ännu inte implementerade (fas 6). "
-        "Kanaler kan konfigureras, men ingenting publiceras.",
+        "oauth": {
+            "client_configured": configured,
+            "store": deps.store.name,
+            "store_available": ok,
+            "store_reason": why,
+            "redirect_uri": request.app.state.cfg.oauth_redirect_uri,
+            "ready": configured and ok,
+        },
     }
 
 
 @router.post("")
 def create(body: ChannelIn, _: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
-    c = Channel(display_name=body.display_name)
+    c = Channel(display_name=body.display_name, allow_public=False)
     _apply(c, body.model_dump())
     c.auto_publish_enabled = False  # always off on creation
     db.add(c)
@@ -173,15 +204,10 @@ def auto_publish(
     cid: str, body: AutoPublishIn, _: Principal = Depends(require_user), db: Session = Depends(get_db)
 ) -> dict:
     c = _get(db, cid)
-    if body.enabled:
-        if (body.confirm_phrase or "").strip().upper() != AUTO_PUBLISH_CONFIRM_PHRASE:
-            raise AppError(
-                ErrorCode.INVALID_INPUT, f'Skriv "{AUTO_PUBLISH_CONFIRM_PHRASE}" för att bekräfta.'
-            )
-        if c.token_reference is None:
-            raise AppError(
-                ErrorCode.INVALID_INPUT, "Kanalen måste anslutas via OAuth innan automatisk publicering."
-            )
+    if body.enabled and (c.token_reference is None or c.connection_state != ConnectionState.CONNECTED):
+        raise AppError(
+            ErrorCode.INVALID_INPUT, "Kanalen måste anslutas via OAuth innan automatisk publicering."
+        )
     c.auto_publish_enabled = body.enabled
     audit.record(
         db,
@@ -195,11 +221,54 @@ def auto_publish(
     return _out(c)
 
 
+@router.post("/{cid}/allow-public")
+def allow_public(
+    cid: str, body: AllowPublicIn, _: Principal = Depends(require_user), db: Session = Depends(get_db)
+) -> dict:
+    """Explicit per-channel opt-in for anything that becomes publicly visible (now or scheduled)."""
+    c = _get(db, cid)
+    if body.enabled and (body.confirm_phrase or "").strip().upper() != ALLOW_PUBLIC_CONFIRM_PHRASE:
+        raise AppError(ErrorCode.INVALID_INPUT, f'Skriv "{ALLOW_PUBLIC_CONFIRM_PHRASE}" för att bekräfta.')
+    c.allow_public = body.enabled
+    if not body.enabled and c.default_visibility == "public":
+        c.default_visibility = "private"
+    audit.record(
+        db,
+        "channel.allow_public",
+        actor="user",
+        object_type="channel",
+        object_id=cid,
+        details={"enabled": body.enabled},
+        severity="warning" if body.enabled else "info",
+    )
+    return _out(c)
+
+
+@router.post("/{cid}/disconnect")
+def disconnect(
+    cid: str, request: Request, _: Principal = Depends(require_user), db: Session = Depends(get_db)
+) -> dict:
+    c = _get(db, cid)
+    revoked = oauth.disconnect(db, request.app.state.publish_deps, c)
+    return {**_out(c), "revoked_at_google": revoked}
+
+
 @router.delete("/{cid}")
 def delete(cid: str, _: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
     c = _get(db, cid)
     if c.token_reference:
         raise AppError(ErrorCode.CONFLICT, "Koppla från kanalen innan den tas bort.", status_code=409)
+    uploaded = db.scalar(
+        select(func.count())
+        .select_from(Publication)
+        .where(Publication.channel_id == cid, Publication.external_video_id.is_not(None))
+    )
+    if uploaded:
+        raise AppError(
+            ErrorCode.CONFLICT,
+            "Kanalen har uppladdningshistorik som skulle försvinna. Inaktivera kanalen i stället.",
+            status_code=409,
+        )
     db.delete(c)
     audit.record(db, "channel.deleted", actor="user", object_type="channel", object_id=cid)
     return {"ok": True}
@@ -214,26 +283,10 @@ def publications(cid: str, _: Principal = Depends(require_user), db: Session = D
         .order_by(Publication.created_at.desc())
         .limit(100)
     ).all()
+    jobs = {j.id: j for j in db.scalars(select(Job).where(Job.id.in_([p.job_id for p in rows if p.job_id])))}
     return {
         "items": [
-            {
-                "id": p.id,
-                "status": p.status,
-                "external_url": p.external_url,
-                "scheduled_for": p.scheduled_for,
-                "uploaded_at": p.uploaded_at,
-                "visibility": p.visibility,
-                "safe_error_message": p.safe_error_message,
-            }
+            ser.publication(p, job=jobs.get(p.job_id or ""), clip_title=p.rendered_clip.title_suggestion)
             for p in rows
         ]
     }
-
-
-@router.post("/oauth/start")
-def oauth_start(_: Principal = Depends(require_user)) -> dict:
-    raise AppError(
-        ErrorCode.INVALID_INPUT,
-        "YouTube OAuth är planerat (fas 6) och ännu inte implementerat.",
-        status_code=501,
-    )

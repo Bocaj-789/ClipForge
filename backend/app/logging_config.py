@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +20,22 @@ class RedactingFilter(logging.Filter):
             msg = str(record.msg)
         record.msg = redact(msg)
         record.args = ()
+        return True
+
+
+_OAUTH_QUERY = re.compile(r"(?i)([?&](?:code|state|access_token|refresh_token|id_token)=)[^&\s\"]+")
+
+
+class AccessLogRedactor(logging.Filter):
+    """uvicorn logs the full request target; keep OAuth callback parameters out of the log files."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _OAUTH_QUERY.sub(r"\1[REDACTED]", a) if isinstance(a, str) else a for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _OAUTH_QUERY.sub(r"\1[REDACTED]", record.msg)
         return True
 
 
@@ -60,3 +77,6 @@ def setup_logging(logs_dir: Path, name: str, level: int = logging.INFO) -> None:
     # Third-party request logs can include URLs with keys; keep them quiet.
     for noisy in ("httpx", "httpcore", "googleapiclient.discovery_cache", "faster_whisper"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, AccessLogRedactor) for f in access.filters):
+        access.addFilter(AccessLogRedactor())

@@ -38,10 +38,15 @@ Labels: **Done** (implemented and tested) · **Partial** · **Untested** (implem
 - Channel configuration UI/API, schedules (DST-safe next slot), caps, templates, typed confirmation for
   auto-publish — Done.
 - Deterministic publication policy (kill switch, caps, spacing, rights, review, media) — Done (unit tested).
-- OAuth, Keychain token storage, resumable upload, reconciliation — **Planned**.
-
-## Phase 7 Multi-channel autopilot — Planned
-Depends on phase 6.
+- OAuth 2.0 (PKCE, single-use state bound to the browser), several channels, Keychain token storage — Done
+  (tested against a simulated Google; **not yet verified with real Google credentials**).
+- Resumable upload, retries with backoff, cancellation between chunks, reconciliation of lost answers,
+  duplicate protection (DB unique pair + persisted session + job idempotency), quota ledger — Done (simulated).
+- Upload vs. public availability tracked separately and read back from YouTube — Done (simulated).
+## Phase 7 Multi-channel autopilot — Partial
+- Automatic publishing of every finished clip to all connected channels (private by default) — Done.
+- Real-world run against YouTube — **Needs your Google Cloud client** (docs/YOUTUBE_SETUP.md, section 6).
+- YouTube Analytics / learning from performance — **Planned**.
 
 ## Phase 8 Analytics and learning — Partial
 - Local processing metrics (renders/day, review counts, real-time factors) — Done.
@@ -53,6 +58,6 @@ Needs your domain and DNS provider. Checklist in SECURITY.md.
 
 ## Phase 10 Hardening — Partial
 - Restart/recovery, graceful stop, disk thresholds, backup verified manually on 2026-10-25.
-- Restore procedure documented, not automated. Expired OAuth / quota tests wait for phase 6.
+- Restore procedure documented, not automated. Expired-token, quota and lost-answer cases are covered by simulated-Google tests.
 - Dashboard verified by component tests and a live API run; **not visually reviewed in a browser** (no headless
   browser on this Mac).

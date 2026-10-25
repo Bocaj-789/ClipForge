@@ -11,6 +11,7 @@ from app.core.errors import AppError, ErrorCode, NotFound
 from app.db.models import Job, JobStatus
 from app.schemas import serializers as ser
 from app.services.audit import service as audit
+from app.services.publishing import service as publishing
 from app.services.queue import service as q
 from app.services.queue.states import assert_transition
 
@@ -64,6 +65,7 @@ def get_job(job_id: str, _: Principal = Depends(require_user), db: Session = Dep
 @router.post("/{job_id}/retry")
 def retry(job_id: str, _: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
     j = q.manual_retry(db, job_id)
+    publishing.sync_job_change(db, j)
     audit.record(db, "job.retry", actor="user", object_type="job", object_id=job_id)
     return ser.job(j)
 
@@ -71,6 +73,7 @@ def retry(job_id: str, _: Principal = Depends(require_user), db: Session = Depen
 @router.post("/{job_id}/cancel")
 def cancel(job_id: str, _: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
     j = q.request_cancel(db, job_id)
+    publishing.sync_job_change(db, j)
     audit.record(db, "job.cancel", actor="user", object_type="job", object_id=job_id)
     return ser.job(j)
 

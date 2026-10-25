@@ -2,8 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import type { RenderedClip } from "../api/types";
+import PublishPanel from "../components/PublishPanel";
 import { ScoreBreakdown } from "../components/Scores";
-import { ConfirmButton, Notice, ReviewPill, RightsPill, useToast } from "../components/ui";
+import {
+  ConfirmButton,
+  Notice,
+  ReviewPill,
+  RightsPill,
+  useToast,
+} from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
 import { t } from "../i18n/sv";
 import { fmtBytes, fmtDuration, fmtTime } from "../lib/format";
@@ -12,7 +19,11 @@ export default function ClipDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const toast = useToast();
-  const q = usePoll<RenderedClip>((s) => api(`/clips/${id}`, { signal: s }), 0, [id]);
+  const q = usePoll<RenderedClip>(
+    (s) => api(`/clips/${id}`, { signal: s }),
+    0,
+    [id],
+  );
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   useEffect(() => {
@@ -21,9 +32,17 @@ export default function ClipDetail() {
       setDesc(q.data.description_suggestion);
     }
   }, [q.data]);
-  if (!q.data) return <div className="page">{q.error ? <Notice tone="fail">{q.error}</Notice> : t.common.loading}</div>;
+  if (!q.data)
+    return (
+      <div className="page">
+        {q.error ? <Notice tone="fail">{q.error}</Notice> : t.common.loading}
+      </div>
+    );
   const c = q.data;
-  const act = async (path: string, opts: Parameters<typeof api>[1] = { method: "POST" }) => {
+  const act = async (
+    path: string,
+    opts: Parameters<typeof api>[1] = { method: "POST" },
+  ) => {
     try {
       await api(`/clips/${c.id}${path}`, opts);
       q.reload();
@@ -48,14 +67,32 @@ export default function ClipDetail() {
       </header>
       <div className="detail">
         <div className="stack">
-          <video src={c.video_url} poster={c.thumbnail_url} controls preload="metadata" playsInline>
-            <track kind="captions" src={c.captions_url} srcLang="sv" label="Svenska" />
+          <video
+            src={c.video_url}
+            poster={c.thumbnail_url}
+            controls
+            preload="metadata"
+            playsInline
+          >
+            <track
+              kind="captions"
+              src={c.captions_url}
+              srcLang="sv"
+              label="Svenska"
+            />
           </video>
           <div className="row">
-            <button className="primary" onClick={() => act("/approve")} disabled={c.review_status === "approved"}>
+            <button
+              className="primary"
+              onClick={() => act("/approve")}
+              disabled={c.review_status === "approved"}
+            >
               {t.clips.approve}
             </button>
-            <button onClick={() => act("/reject")} disabled={c.review_status === "rejected"}>
+            <button
+              onClick={() => act("/reject")}
+              disabled={c.review_status === "rejected"}
+            >
               {t.clips.reject}
             </button>
           </div>
@@ -91,24 +128,43 @@ export default function ClipDetail() {
             className="panel"
             onSubmit={async (e) => {
               e.preventDefault();
-              if (await act("", { method: "PATCH", body: { title_suggestion: title, description_suggestion: desc } }))
+              if (
+                await act("", {
+                  method: "PATCH",
+                  body: {
+                    title_suggestion: title,
+                    description_suggestion: desc,
+                  },
+                })
+              )
                 toast("Texterna sparades.");
             }}
           >
             <label>
               {t.clips.titleLabel}
-              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} required />
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={100}
+                required
+              />
               <span className="help num">{title.length}/95</span>
             </label>
             <label>
               {t.clips.descLabel}
-              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={6} maxLength={4500} />
+              <textarea
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                rows={6}
+                maxLength={4500}
+              />
             </label>
             <p className="small muted">{c.hashtags.join(" ")}</p>
             <div>
               <button type="submit">{t.common.save}</button>
             </div>
           </form>
+          <PublishPanel clip={c} />
           {p && (
             <section className="panel" aria-labelledby="score-h">
               <div className="spread">
@@ -123,12 +179,15 @@ export default function ClipDetail() {
             <section className="panel">
               <h2>{t.clips.source}</h2>
               <p>
-                <Link to={`/video/${c.source.id}`}>{c.source.title ?? "Källvideo"}</Link>
+                <Link to={`/video/${c.source.id}`}>
+                  {c.source.title ?? "Källvideo"}
+                </Link>
                 {c.source.creator_name ? `, ${c.source.creator_name}` : ""}
               </p>
               {p && (
                 <p className="small muted num">
-                  {fmtDuration(p.start_seconds)}–{fmtDuration(p.end_seconds)} i originalet
+                  {fmtDuration(p.start_seconds)}–{fmtDuration(p.end_seconds)} i
+                  originalet
                 </p>
               )}
               {p && (

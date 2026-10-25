@@ -42,7 +42,12 @@ export interface Candidate {
   blocked_reason: string | null;
   last_error: string | null;
   source_id: string | null;
-  media: { width: number; height: number; orientation: string; fps: number } | null;
+  media: {
+    width: number;
+    height: number;
+    orientation: string;
+    fps: number;
+  } | null;
   latest_job: Job | null;
 }
 
@@ -120,7 +125,12 @@ export interface Summary {
   candidates_total: number;
   recent_errors: Job[];
   storage: Storage;
-  transcription: { available: boolean; reason: string | null; model: string; downloaded: boolean };
+  transcription: {
+    available: boolean;
+    reason: string | null;
+    model: string;
+    downloaded: boolean;
+  };
   llm_provider: string;
   sources: {
     id: string;
@@ -132,7 +142,14 @@ export interface Summary {
     last_error: string | null;
   }[];
   channels: number;
-  recent_publications: { id: string; status: string; created_at: string }[];
+  recent_publications: {
+    id: string;
+    status: string;
+    availability: string;
+    channel_name: string | null;
+    external_url: string | null;
+    created_at: string;
+  }[];
   auto_publish_global_enabled: boolean;
   youtube_api_key_configured: boolean;
 }
@@ -169,8 +186,100 @@ export interface Channel {
   render_profile: string;
   caption_style: string;
   oauth_connected: boolean;
+  connection_state: "disconnected" | "connected" | "needs_reauth";
+  connection_error: string | null;
+  external_channel_id: string | null;
+  youtube_title: string | null;
+  youtube_handle: string | null;
+  youtube_url: string | null;
+  allow_public: boolean;
+  category_id: string;
+  made_for_kids: boolean;
+  notify_subscribers: boolean;
+  auto_publish_min_score: number;
   next_slot: string | null;
   last_upload_at: string | null;
+}
+
+export interface OAuthInfo {
+  client_configured: boolean;
+  store: string;
+  store_available: boolean;
+  store_reason: string | null;
+  redirect_uri: string;
+  ready: boolean;
+}
+
+export interface Publication {
+  id: string;
+  rendered_clip_id: string;
+  channel_id: string;
+  channel_name: string | null;
+  clip_title: string | null;
+  status:
+    "queued" | "uploading" | "uploaded" | "failed" | "blocked" | "cancelled";
+  upload_succeeded: boolean;
+  availability:
+    | "unknown"
+    | "processing"
+    | "private"
+    | "unlisted"
+    | "scheduled"
+    | "public"
+    | "rejected"
+    | "failed"
+    | "missing";
+  is_public: boolean;
+  visibility_requested: string;
+  privacy_actual: string | null;
+  scheduled_for: string | null;
+  uploaded_at: string | null;
+  external_video_id: string | null;
+  external_url: string | null;
+  rejection_reason: string | null;
+  title: string;
+  progress_percent: number | null;
+  error_code: string | null;
+  safe_error_message: string | null;
+  notice: string | null;
+  automatic: boolean;
+  last_checked_at: string | null;
+  created_at: string;
+  job: {
+    id: string;
+    status: string;
+    stage: string | null;
+    attempt_count: number;
+    max_attempts: number;
+    next_attempt_at: string | null;
+    cancel_requested: boolean;
+  } | null;
+}
+
+export interface PublishingStatus {
+  client_configured: boolean;
+  redirect_uri: string;
+  token_store: { backend: string; available: boolean; reason: string | null };
+  quota: {
+    resets_at: string;
+    insert: { used: number; limit: number; remaining: number };
+    units: { used: number; limit: number; remaining: number };
+  };
+  auto_publish_global_enabled: boolean;
+  connected_channels: number;
+}
+
+export interface PublishResult {
+  results: {
+    channel_id: string;
+    channel_name: string;
+    outcome: string;
+    publication_id: string | null;
+    reasons: string[];
+    url: string | null;
+  }[];
+  created: number;
+  publications: Publication[];
 }
 
 export interface Paged<T> {

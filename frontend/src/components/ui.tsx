@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { t } from "../i18n/sv";
 
 // ------------------------------------------------------------- status pills
@@ -22,9 +30,39 @@ const CAND_TONE: Record<string, string> = {
   awaiting_media: "review",
   failed: "fail",
 };
-const REVIEW_TONE: Record<string, string> = { needs_review: "review", approved: "done", rejected: "muted" };
+const REVIEW_TONE: Record<string, string> = {
+  needs_review: "review",
+  approved: "done",
+  rejected: "muted",
+};
 
-export function Pill({ tone, children }: { tone: string; children: ReactNode }) {
+const PUB_TONE: Record<string, string> = {
+  queued: "wait",
+  uploading: "work",
+  uploaded: "done",
+  failed: "fail",
+  blocked: "fail",
+  cancelled: "muted",
+};
+const AVAIL_TONE: Record<string, string> = {
+  unknown: "muted",
+  processing: "work",
+  private: "review",
+  unlisted: "review",
+  scheduled: "review",
+  public: "done",
+  rejected: "fail",
+  failed: "fail",
+  missing: "fail",
+};
+
+export function Pill({
+  tone,
+  children,
+}: {
+  tone: string;
+  children: ReactNode;
+}) {
   return (
     <span className="pill" data-tone={tone}>
       {children}
@@ -32,25 +70,56 @@ export function Pill({ tone, children }: { tone: string; children: ReactNode }) 
   );
 }
 export const JobPill = ({ status }: { status: string }) => (
-  <Pill tone={JOB_TONE[status] ?? "muted"}>{t.jobStatus[status] ?? status}</Pill>
+  <Pill tone={JOB_TONE[status] ?? "muted"}>
+    {t.jobStatus[status] ?? status}
+  </Pill>
 );
 export const CandPill = ({ status }: { status: string }) => (
-  <Pill tone={CAND_TONE[status] ?? "muted"}>{t.candStatus[status] ?? status}</Pill>
+  <Pill tone={CAND_TONE[status] ?? "muted"}>
+    {t.candStatus[status] ?? status}
+  </Pill>
 );
 export const ReviewPill = ({ status }: { status: string }) => (
-  <Pill tone={REVIEW_TONE[status] ?? "muted"}>{t.review[status] ?? status}</Pill>
+  <Pill tone={REVIEW_TONE[status] ?? "muted"}>
+    {t.review[status] ?? status}
+  </Pill>
 );
 export const RightsPill = ({ status }: { status: string }) => (
-  <Pill tone={status === "unknown" || status === "not_permitted" ? "fail" : "done"}>{t.rights[status] ?? status}</Pill>
+  <Pill
+    tone={status === "unknown" || status === "not_permitted" ? "fail" : "done"}
+  >
+    {t.rights[status] ?? status}
+  </Pill>
+);
+
+export const PubPill = ({ status }: { status: string }) => (
+  <Pill tone={PUB_TONE[status] ?? "muted"}>
+    {t.publishing.status[status] ?? status}
+  </Pill>
+);
+export const AvailPill = ({ availability }: { availability: string }) => (
+  <Pill tone={AVAIL_TONE[availability] ?? "muted"}>
+    {t.publishing.availability[availability] ?? availability}
+  </Pill>
 );
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
-export function Notice({ tone = "warn", children }: { tone?: "warn" | "fail" | "info"; children: ReactNode }) {
+export function Notice({
+  tone = "warn",
+  children,
+}: {
+  tone?: "warn" | "fail" | "info";
+  children: ReactNode;
+}) {
   return (
-    <div className="notice" data-tone={tone} role={tone === "fail" ? "alert" : undefined}>
+    <div
+      className="notice"
+      data-tone={tone}
+      role={tone === "fail" ? "alert" : undefined}
+    >
       {children}
     </div>
   );
@@ -72,7 +141,9 @@ export function Progress({ value }: { value: number }) {
 
 // ------------------------------------------------------------- toasts
 type Toast = { id: number; text: string; tone: "info" | "fail" };
-const ToastCtx = createContext<(text: string, tone?: "info" | "fail") => void>(() => {});
+const ToastCtx = createContext<(text: string, tone?: "info" | "fail") => void>(
+  () => {},
+);
 export const useToast = () => useContext(ToastCtx);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -80,7 +151,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const push = useCallback((text: string, tone: "info" | "fail" = "info") => {
     const id = Date.now() + Math.random();
     setItems((xs) => [...xs, { id, text, tone }]);
-    window.setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), tone === "fail" ? 8000 : 4500);
+    window.setTimeout(
+      () => setItems((xs) => xs.filter((x) => x.id !== id)),
+      tone === "fail" ? 8000 : 4500,
+    );
   }, []);
   return (
     <ToastCtx.Provider value={push}>
@@ -127,7 +201,12 @@ export function ConfirmButton({
   const ok = !requirePhrase || phrase.trim().toUpperCase() === requirePhrase;
   return (
     <>
-      <button type="button" className={className} onClick={() => ref.current?.showModal()} disabled={disabled}>
+      <button
+        type="button"
+        className={className}
+        onClick={() => ref.current?.showModal()}
+        disabled={disabled}
+      >
         {children}
       </button>
       <dialog ref={ref} aria-labelledby="confirm-title">
@@ -151,14 +230,22 @@ export function ConfirmButton({
           {requirePhrase && (
             <label>
               Skriv {requirePhrase}
-              <input value={phrase} onChange={(e) => setPhrase(e.target.value)} autoFocus />
+              <input
+                value={phrase}
+                onChange={(e) => setPhrase(e.target.value)}
+                autoFocus
+              />
             </label>
           )}
           <div className="row" style={{ justifyContent: "flex-end" }}>
             <button type="button" onClick={() => ref.current?.close()}>
               {t.common.cancel}
             </button>
-            <button type="submit" className="danger solid" disabled={!ok || busy}>
+            <button
+              type="submit"
+              className="danger solid"
+              disabled={!ok || busy}
+            >
               {confirmLabel ?? t.common.confirm}
             </button>
           </div>

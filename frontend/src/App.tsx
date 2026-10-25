@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { api, onConnectionChange, setCsrf, setUnauthorizedHandler } from "./api/client";
+import {
+  BrowserRouter,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
+import {
+  api,
+  onConnectionChange,
+  setCsrf,
+  setUnauthorizedHandler,
+} from "./api/client";
 import type { Me, Summary } from "./api/types";
 import { ToastProvider } from "./components/ui";
 import { usePoll } from "./hooks/usePoll";
@@ -15,6 +26,7 @@ import Inbox from "./pages/Inbox";
 import Login from "./pages/Login";
 import Logs from "./pages/Logs";
 import Overview from "./pages/Overview";
+import Publications from "./pages/Publications";
 import Queue from "./pages/Queue";
 import Settings from "./pages/Settings";
 import VideoDetail from "./pages/VideoDetail";
@@ -22,7 +34,10 @@ import VideoDetail from "./pages/VideoDetail";
 function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [offline, setOffline] = useState(false);
   useEffect(() => onConnectionChange((on) => setOffline(!on)), []);
-  const { data } = usePoll<Summary>((s) => api("/dashboard/summary", { signal: s }), 15000);
+  const { data } = usePoll<Summary>(
+    (s) => api("/dashboard/summary", { signal: s }),
+    15000,
+  );
   useEffect(() => {
     api<{ settings: { timezone: string } }>("/settings")
       .then((r) => setTimezone(r.settings.timezone))
@@ -35,6 +50,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     ["/klipp", t.nav.clips, data?.clips_awaiting_review],
     ["/upptackt", t.nav.discovery],
     ["/kanaler", t.nav.channels],
+    ["/publicering", t.nav.publishing],
     ["/analys", t.nav.analytics],
     ["/installningar", t.nav.settings],
     ["/aktivitet", t.nav.logs],
@@ -80,6 +96,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <Route path="/video/:id" element={<VideoDetail />} />
             <Route path="/upptackt" element={<Discovery />} />
             <Route path="/kanaler" element={<Channels />} />
+            <Route path="/publicering" element={<Publications />} />
             <Route path="/analys" element={<Analytics />} />
             <Route path="/installningar" element={<Settings />} />
             <Route path="/aktivitet" element={<Logs />} />
@@ -113,7 +130,15 @@ export default function App() {
   }, [refresh]);
 
   if (!me) {
-    return <div className="auth-wrap">{bootError ? <p role="alert">{bootError}</p> : <p>{t.common.loading}</p>}</div>;
+    return (
+      <div className="auth-wrap">
+        {bootError ? (
+          <p role="alert">{bootError}</p>
+        ) : (
+          <p>{t.common.loading}</p>
+        )}
+      </div>
+    );
   }
   return (
     <ToastProvider>

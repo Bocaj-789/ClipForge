@@ -23,6 +23,8 @@ Inställningar → *Tillåtna mediavärdar*.
 **Jobs pile up in *Nytt försök snart*.** Transient errors (network, quota). The next attempt time is shown;
 *Kör igen* resets the attempt budget.
 
+**YouTube connection or upload problems.** See the troubleshooting table in
+[YOUTUBE_SETUP.md](YOUTUBE_SETUP.md#troubleshooting).
 **"För många inloggningsförsök".** Wait a minute. Locked out: `python -m app.cli reset-password <user>`.
 
 **Mac went to sleep mid-render.** The job's lease expires and it restarts from its last stage after wake.

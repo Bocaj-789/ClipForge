@@ -70,7 +70,11 @@ def dependencies(
         "llm": {"provider": s.llm_provider, "available": ollama_ok, "reason": ollama_reason},
         "youtube_api_key_configured": cfg.youtube_api_key is not None
         and bool(cfg.youtube_api_key.get_secret_value()),
-        "oauth_client_configured": (cfg.secrets_dir / "google_client_secret.json").exists(),
+        "oauth_client_configured": request.app.state.publish_deps.oauth_client() is not None,
+        "token_store": {
+            "backend": request.app.state.publish_deps.store.name,
+            "available": request.app.state.publish_deps.store.available()[0],
+        },
         "database": migration_status(cfg.database_url),
         "remote_access_enabled": s.remote_access_enabled,
         "paid_ai_apis": "disabled",
@@ -168,7 +172,15 @@ def summary(request: Request, _: Principal = Depends(require_user), db: Session 
         ],
         "channels": db.scalar(select(func.count()).select_from(Channel)) or 0,
         "recent_publications": [
-            {"id": p.id, "status": p.status, "created_at": p.created_at} for p in recent_pubs
+            {
+                "id": p.id,
+                "status": p.status,
+                "availability": p.availability,
+                "channel_name": p.channel.display_name if p.channel is not None else None,
+                "external_url": p.external_url,
+                "created_at": p.created_at,
+            }
+            for p in recent_pubs
         ],
         "auto_publish_global_enabled": s.auto_publish_global_enabled,
         "youtube_api_key_configured": cfg.youtube_api_key is not None,

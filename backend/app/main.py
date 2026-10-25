@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import auth as auth_routes
-from app.api.routes import channels, clips, inbox, jobs, logs, settings, sources, system
+from app.api.routes import channels, clips, inbox, jobs, logs, oauth, publishing, settings, sources, system
 from app.config import REPO_ROOT, Config, get_config
 from app.core import auth
 from app.core.errors import AppError, ErrorCode
@@ -23,6 +23,7 @@ from app.core.security import PathContainmentError
 from app.db.migrate import upgrade_to_head
 from app.db.session import init_engine, session_scope
 from app.logging_config import setup_logging
+from app.services.publishing.deps import PublishDeps, make_deps
 
 log = logging.getLogger("clipforge.api")
 FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
@@ -39,7 +40,12 @@ def _error(status: int, code: str, message: str, request: Request) -> JSONRespon
     return JSONResponse({"error": {"code": code, "message": message, "request_id": rid}}, status_code=status)
 
 
-def create_app(cfg: Config | None = None, *, configure_logging: bool = True) -> FastAPI:
+def create_app(
+    cfg: Config | None = None,
+    *,
+    configure_logging: bool = True,
+    publish_deps: PublishDeps | None = None,
+) -> FastAPI:
     cfg = cfg or get_config()
 
     @asynccontextmanager
@@ -70,6 +76,8 @@ def create_app(cfg: Config | None = None, *, configure_logging: bool = True) -> 
         openapi_url="/api/openapi.json" if cfg.dev_mode else None,
     )
     app.state.cfg = cfg
+    # Google/YouTube wiring (HTTP client, Keychain). Tests inject mocks here.
+    app.state.publish_deps = publish_deps or make_deps(cfg)
     app.state.setup_token = auth.SetupToken()
     app.state.login_limiter = auth.RateLimiter(limit=5, window_seconds=60)
     app.state.setup_limiter = auth.RateLimiter(limit=5, window_seconds=300)
@@ -130,6 +138,8 @@ def create_app(cfg: Config | None = None, *, configure_logging: bool = True) -> 
         clips.router,
         sources.router,
         channels.router,
+        oauth.router,
+        publishing.router,
         settings.router,
         logs.router,
     ):

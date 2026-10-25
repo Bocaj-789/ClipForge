@@ -160,7 +160,9 @@ def test_channels_auto_publish_requires_oauth_and_phrase(authed) -> None:
         headers=h,
     )
     assert r.status_code == 400  # not connected
-    assert client.post("/api/v1/channels/oauth/start", headers=h).status_code == 501
+    # Starting OAuth without a configured Google client is refused with a clear message.
+    r = client.post("/api/v1/oauth/youtube/start", json={}, headers=h)
+    assert r.status_code == 400 and "OAuth-klienten" in r.json()["error"]["message"]
     r = client.patch(f"/api/v1/channels/{ch['id']}/settings", json={"timezone": "Nowhere/City"}, headers=h)
     assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_input"
 

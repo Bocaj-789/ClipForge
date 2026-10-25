@@ -69,7 +69,7 @@ def test_unknown_rights_blocks_even_manual() -> None:
 
 def test_daily_caps_and_spacing() -> None:
     assert not _check(uploads_today_channel=2).allowed
-    assert not _check(uploads_today_global=3).allowed
+    assert not _check(uploads_today_global=AppSettings().max_uploads_per_day_global).allowed
     assert not _check(last_upload_at=datetime.now(UTC) - timedelta(minutes=10)).allowed
 
 
@@ -80,8 +80,11 @@ def test_manual_publish_requires_approval_and_oauth() -> None:
     assert not _check(clip=_clip(title_suggestion="  <> ")).allowed
 
 
-def test_warnings_force_manual_review_for_auto() -> None:
-    assert not _check(clip=_clip(warnings_json=["låg upplösning"])).allowed
+def test_warnings_only_hold_back_automatic_uploads_that_would_become_public() -> None:
+    warned = _clip(warnings_json=["låg upplösning"])
+    assert _check(clip=warned).allowed  # private: safe to review in YouTube Studio
+    assert not _check(clip=warned, channel=_channel(allow_public=True), visibility="public").allowed
+    assert not _check(clip=warned, channel=_channel(allow_public=True), scheduled=True).allowed
 
 
 def test_next_slot_respects_window_and_dst() -> None:

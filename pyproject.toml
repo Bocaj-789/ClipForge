@@ -23,6 +23,7 @@ dependencies = [
   "google-auth==2.62.0",
   "google-auth-oauthlib==1.5.0",
   "google-api-python-client==2.201.0",
+  "keyring==25.7.0",
   "yt-dlp==2026.10.21",
   "yt-dlp-ejs==0.8.0",
 ]
@@ -46,11 +47,12 @@ ignore = ["S101", "S603", "B008", "SIM105", "SIM108"]
 testpaths = ["backend/tests"]
 pythonpath = ["backend"]
 markers = [
+  "keychain: touches the real macOS Keychain with a throwaway item (opt-in)",
   "ffmpeg: requires ffmpeg/ffprobe on PATH",
   "whisper_model: requires a downloaded local Whisper model (opt-in)",
   "ollama: requires a running local Ollama server (opt-in)",
 ]
-addopts = "-q -m 'not whisper_model and not ollama'"
+addopts = "-q -m 'not whisper_model and not ollama and not keychain'"
 # Pipeline tests write real videos; don't let old runs pile up on a small disk.
 tmp_path_retention_count = 1
 tmp_path_retention_policy = "failed"

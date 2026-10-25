@@ -8,6 +8,7 @@ export const sv = {
     clips: "Klipp",
     discovery: "Upptäckt",
     channels: "Kanaler",
+    publishing: "Publicering",
     analytics: "Analys",
     settings: "Inställningar",
     logs: "Aktivitet",
@@ -77,11 +78,18 @@ export const sv = {
     rendered: "renderad",
     published: "publicerad",
   } as Record<string, string>,
-  review: { needs_review: "Behöver granskas", approved: "Godkänt", rejected: "Avvisat" } as Record<string, string>,
-  priority: { 0: "Brådskande", 1: "Manuell", 2: "Bevakad kanal", 3: "Upptäckt", 4: "Underhåll" } as Record<
-    number,
-    string
-  >,
+  review: {
+    needs_review: "Behöver granskas",
+    approved: "Godkänt",
+    rejected: "Avvisat",
+  } as Record<string, string>,
+  priority: {
+    0: "Brådskande",
+    1: "Manuell",
+    2: "Bevakad kanal",
+    3: "Upptäckt",
+    4: "Underhåll",
+  } as Record<number, string>,
   common: {
     save: "Spara",
     cancel: "Avbryt",
@@ -98,7 +106,8 @@ export const sv = {
     more: "Visa fler",
   },
   errors: {
-    offline: "Ingen kontakt med ClipForge-servern. Kontrollera att den körs (./scripts/start.sh).",
+    offline:
+      "Ingen kontakt med ClipForge-servern. Kontrollera att den körs (./scripts/start.sh).",
     rateLimited: "För många förfrågningar. Vänta en stund och försök igen.",
     generic: "Något gick fel.",
     session: "Sessionen har gått ut. Logga in igen.",
@@ -133,7 +142,7 @@ export const sv = {
     autoPublishOff: "Automatisk publicering: av",
     autoPublishOn: "Automatisk publicering: på",
     publications: "Publiceringar",
-    noPublications: "Inget har publicerats. Uppladdning till YouTube är inte byggd ännu.",
+    noPublications: "Inget har laddats upp ännu.",
   },
   inbox: {
     title: "Inkorg",
@@ -150,14 +159,16 @@ export const sv = {
     upload: "Ladda upp videofil",
     uploadHelp: "MP4, MOV, MKV eller WEBM. Filen sparas i ClipForges datamapp.",
     uploading: "Laddar upp…",
-    duplicate: "Den här videon fanns redan. Prioriteten höjdes i stället för att skapa ett nytt jobb.",
+    duplicate:
+      "Den här videon fanns redan. Prioriteten höjdes i stället för att skapa ett nytt jobb.",
     duplicateSame: "Den här videon fanns redan i kön.",
     added: "Tillagd i kön.",
     youtubeNote:
       "YouTube-länkar hämtas automatiskt när rättigheterna är bekräftade. Om YouTube inte lämnar ut videon (privat, inloggning, DRM, region) väntar jobbet på mediaåtkomst medan övriga köar vidare – bifoga då originalfilen.",
     empty: "Inkorgen är tom. Klistra in en länk ovan för att börja.",
     attach: "Bifoga fil",
-    steps: "Steg: metadata → analys → transkribering → klippförslag → rendering → granskning",
+    steps:
+      "Steg: metadata → analys → transkribering → klippförslag → rendering → granskning",
   },
   queue: {
     title: "Kö",
@@ -169,17 +180,20 @@ export const sv = {
   },
   clips: {
     title: "Klipp",
-    empty: "Inga renderade klipp ännu. När en video har bearbetats hamnar de bästa förslagen här.",
+    empty:
+      "Inga renderade klipp ännu. När en video har bearbetats hamnar de bästa förslagen här.",
     approve: "Godkänn",
     reject: "Avvisa",
     download: "Ladda ned MP4",
     captions: "Undertexter (SRT)",
     score: "Poäng",
-    scoreNote: "Poängen rangordnar förslag med enkla regler. Den förutsäger inte visningar.",
+    scoreNote:
+      "Poängen rangordnar förslag med enkla regler. Den förutsäger inte visningar.",
     titleLabel: "Titelförslag",
     descLabel: "Beskrivningsförslag",
     source: "Källa",
-    deleteConfirm: "Ta bort det renderade klippet och dess filer? Originalvideon påverkas inte.",
+    deleteConfirm:
+      "Ta bort det renderade klippet och dess filer? Originalvideon påverkas inte.",
   },
   video: {
     proposals: "Klippförslag",
@@ -188,7 +202,8 @@ export const sv = {
     transcript: "Transkription",
     jobs: "Jobbhistorik",
     setRights: "Uppdatera rättigheter",
-    deleteConfirm: "Ta bort videon, dess klippförslag och renderade klipp? Filer i importmappen lämnas orörda.",
+    deleteConfirm:
+      "Ta bort videon, dess klippförslag och renderade klipp? Filer i importmappen lämnas orörda.",
     reprocess: "Bearbeta igen",
     skip: "Hoppa över",
   },
@@ -210,22 +225,146 @@ export const sv = {
     checkNow: "Kontrollera nu",
     empty: "Inga källor ännu.",
     lastCheck: "Senast kontrollerad",
-    folderHelp: "Lägg filer i data/import. De refereras där och raderas aldrig av ClipForge.",
+    folderHelp:
+      "Lägg filer i data/import. De refereras där och raderas aldrig av ClipForge.",
   },
   channels: {
     title: "Kanaler",
-    lead: "Varje kanal har egna gränser och scheman. Ingenting publiceras automatiskt utan att du slår på det.",
-    add: "Lägg till kanal",
-    name: "Visningsnamn",
+    lead: "Anslut så många YouTube-kanaler du vill. Varje kanal har egna gränser och en egen anslutning.",
+    connect: "Lägg till YouTube-kanal",
+    connectAnother: "Lägg till en kanal till",
+    connecting: "Öppnar Google…",
+    connectHelp:
+      "Du skickas till Google för att välja konto och kanal och godkänna uppladdning. Upprepa för varje kanal (välj ett annat konto eller en annan varumärkeskanal).",
+    setupNeeded: "Google-anslutningen är inte konfigurerad ännu",
+    setupHelp:
+      "Skapa en OAuth-klient i Google Cloud och lägg id och hemlighet i .env (eller data/secrets/google_client_secret.json). Stegen finns i docs/YOUTUBE_SETUP.md. Redirect-URI att registrera:",
+    storeMissing: "Säker lagring av tokens saknas",
+    empty:
+      "Inga kanaler anslutna ännu. Tryck på knappen ovan för att lägga till din första.",
+    connected: "Ansluten",
+    disconnected: "Inte ansluten",
+    needsReauth: "Anslut igen",
+    reconnect: "Anslut igen",
+    disconnect: "Koppla från",
+    disconnectConfirm:
+      "Koppla från kanalen? Åtkomsten återkallas hos Google och tokenet raderas. Uppladdningshistoriken finns kvar.",
+    inAuto: "Med i automatisk publicering",
+    autoNote:
+      "Klipp som blir klara laddas upp privat till alla kanaler som är med.",
+    publicLabel: "Offentlig publicering",
+    publicOff: "Av – allt laddas upp privat",
+    publicOn: "Tillåten",
+    allowPublic: "Tillåt offentlig publicering",
+    allowPublicMessage:
+      "Med detta på kan klipp bli synliga för alla på kanalen, direkt eller på schemalagd tid. Slå bara på det om du litar på att klippen får publiceras utan din granskning.",
+    revokePublic: "Stäng av offentlig publicering",
+    edit: "Inställningar",
+    limitsLead: "Gränser och standardvärden",
     perDay: "Max uppladdningar per dag",
     spacing: "Minsta tid mellan uppladdningar (min)",
     visibility: "Standardsynlighet",
     nextSlot: "Nästa tillåtna tid",
-    oauthMissing: "Inte ansluten",
-    oauthPlanned:
-      "Anslutning till YouTube via OAuth och uppladdning är ännu inte byggda. Kanaler kan konfigureras men inget laddas upp.",
-    empty: "Inga kanaler ännu.",
-    windows: "Publiceringsfönster",
+    windows: "Publiceringsfönster (för schemalagda offentliga uppladdningar)",
+    lastUpload: "Senaste uppladdning",
+    errors: {
+      invalid_state:
+        "Anslutningen kunde inte verifieras (ogiltig eller använd länk). Försök igen.",
+      expired_state: "Anslutningen tog för lång tid. Försök igen.",
+      access_denied: "Du avbröt anslutningen hos Google.",
+      scopes_missing:
+        "Du måste godkänna alla begärda behörigheter. Försök igen och låt alla rutor vara ikryssade.",
+      no_refresh_token:
+        "Google skickade ingen långlivad token. Ta bort ClipForge under myaccount.google.com/permissions och försök igen.",
+      no_channel:
+        "Google-kontot har ingen YouTube-kanal. Skapa en kanal på youtube.com först.",
+      channel_in_use: "Den här YouTube-kanalen är redan ansluten.",
+      wrong_channel:
+        "Du valde en annan YouTube-kanal än den du försökte ansluta igen.",
+      token_exchange_failed: "Google avvisade koden. Försök igen.",
+      client_config:
+        "Google avvisade OAuth-klienten. Kontrollera klient-id, hemlighet och redirect-URI.",
+      store_unavailable:
+        "Det gick inte att spara token säkert. Kanalen anslöts inte.",
+      google_error: "Google svarade med ett fel. Försök igen om en stund.",
+      internal: "Något gick fel i ClipForge. Se loggen.",
+    } as Record<string, string>,
+    connectedToast: "Kanalen är ansluten.",
+  },
+  publishing: {
+    title: "Publicering",
+    lead: "Alla uppladdningar till YouTube. Uppladdad betyder att YouTube tagit emot filen – inte att den är synlig för andra.",
+    autoTitle: "Automatisk publicering",
+    autoOn:
+      "På: varje klipp som blir klart laddas upp till alla anslutna kanaler som är med.",
+    autoOff: "Av: klipp laddas bara upp när du själv väljer det.",
+    enableAuto: "Slå på automatisk publicering",
+    disableAuto: "Slå av",
+    enableMessage:
+      "Från nu laddas varje färdigt klipp upp automatiskt till alla anslutna kanaler som är med i automatisk publicering. Uppladdningarna är privata om du inte uttryckligen tillåtit offentlig publicering för kanalen. Fortsätta?",
+    quota: "YouTube-kvot idag",
+    quotaUploads: "uppladdningar",
+    quotaReset: "Nollställs",
+    empty: "Inga uppladdningar ännu.",
+    filters: [
+      ["", "Alla"],
+      ["queued,uploading", "Pågår"],
+      ["uploaded", "Uppladdade"],
+      ["failed,blocked", "Problem"],
+      ["cancelled", "Avbrutna"],
+    ] as [string, string][],
+    status: {
+      queued: "I kö",
+      uploading: "Laddar upp",
+      uploaded: "Uppladdad",
+      failed: "Misslyckades",
+      blocked: "Behöver din åtgärd",
+      cancelled: "Avbruten",
+    } as Record<string, string>,
+    availability: {
+      unknown: "Status okänd",
+      processing: "YouTube bearbetar",
+      private: "Privat",
+      unlisted: "Olistad",
+      scheduled: "Schemalagd",
+      public: "Offentlig",
+      rejected: "Avvisad av YouTube",
+      failed: "YouTube kunde inte bearbeta",
+      missing: "Finns inte längre på YouTube",
+    } as Record<string, string>,
+    notPublicYet: "Uppladdad – inte offentlig ännu",
+    open: "Öppna på YouTube",
+    refresh: "Uppdatera status",
+    retry: "Försök igen",
+    retryFresh: "Ladda upp på nytt",
+    cancel: "Avbryt",
+    forget: "Ta bort post",
+    manual: "Manuell",
+    auto: "Automatisk",
+    nextTry: "Nästa försök",
+  },
+  clipPublish: {
+    title: "Publicera på YouTube",
+    noChannels: "Inga anslutna kanaler. Lägg till en under Kanaler.",
+    approveFirst: "Godkänn klippet för att kunna publicera manuellt.",
+    channels: "Kanaler",
+    visibility: "Synlighet",
+    schedule: "Schemalägg offentlig release (valfritt)",
+    scheduleHelp:
+      "Kräver att offentlig publicering är tillåten för kanalen. Klippet laddas upp privat och släpps av YouTube vid tidpunkten.",
+    submit: "Publicera",
+    submitting: "Köar…",
+    history: "Uppladdningar av det här klippet",
+    queued: "Köad",
+    already: "Redan uppladdad",
+    inProgress: "Pågår redan",
+    blocked: "Hoppades över",
+    vis: {
+      private: "Privat",
+      unlisted: "Olistad",
+      public: "Offentlig",
+    } as Record<string, string>,
+    channelDefault: "Kanalens standard",
   },
   analytics: {
     title: "Analys",
@@ -240,7 +379,8 @@ export const sv = {
   settings: {
     title: "Inställningar",
     saved: "Inställningarna sparades.",
-    confirmRisky: "Den här ändringen slår på något som kan påverka konton eller disk. Skriv JA för att bekräfta.",
+    confirmRisky:
+      "Den här ändringen slår på något som kan påverka konton eller disk. Skriv JA för att bekräfta.",
     backup: "Skapa säkerhetskopia",
     backupDone: "Säkerhetskopia skapad",
     groups: {

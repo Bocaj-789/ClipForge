@@ -96,12 +96,35 @@ class Visibility(StrEnum):
 
 
 class PublicationStatus(StrEnum):
+    """Upload lifecycle only. ``UPLOADED`` means YouTube accepted the file and returned a video id;
+    it says nothing about whether the video is publicly visible (see :class:`Availability`)."""
+
     QUEUED = "queued"
     UPLOADING = "uploading"
-    PROCESSING = "processing"
-    PUBLISHED = "published"
+    UPLOADED = "uploaded"
     FAILED = "failed"
+    BLOCKED = "blocked"  # needs the user (re-authorise, uncertain outcome, rights, public not allowed)
     CANCELLED = "cancelled"
+
+
+class Availability(StrEnum):
+    """What YouTube itself reports about an uploaded video."""
+
+    UNKNOWN = "unknown"  # not checked yet
+    PROCESSING = "processing"  # YouTube is still processing the file
+    PRIVATE = "private"
+    UNLISTED = "unlisted"
+    SCHEDULED = "scheduled"  # private now, becomes public at ``scheduled_for``
+    PUBLIC = "public"
+    REJECTED = "rejected"
+    FAILED = "failed"  # YouTube could not process the file
+    MISSING = "missing"  # the video no longer exists on YouTube
+
+
+class ConnectionState(StrEnum):
+    DISCONNECTED = "disconnected"
+    CONNECTED = "connected"
+    NEEDS_REAUTH = "needs_reauth"  # refresh token revoked/expired; the user must connect again
 
 
 # ---------------------------------------------------------------- tables
@@ -311,8 +334,20 @@ class Channel(Base):
     min_clip_seconds: Mapped[int] = mapped_column(Integer, default=20)
     max_clip_seconds: Mapped[int] = mapped_column(Integer, default=60)
     late_policy: Mapped[str] = mapped_column(String(16), default="next_slot")  # next_slot | skip
+    # Pointer into the OS secret store (macOS Keychain). The refresh token itself is never in the DB.
     token_reference: Mapped[str | None] = mapped_column(String(200))
     oauth_connected_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    connection_state: Mapped[str] = mapped_column(String(16), default=ConnectionState.DISCONNECTED)
+    connection_error: Mapped[str | None] = mapped_column(Text)
+    granted_scopes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    youtube_title: Mapped[str | None] = mapped_column(String(200))
+    youtube_handle: Mapped[str | None] = mapped_column(String(100))
+    # Public (and scheduled-to-become-public) uploads need this explicit opt-in per channel.
+    allow_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    category_id: Mapped[str] = mapped_column(String(8), default="22")
+    made_for_kids: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_subscribers: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_publish_min_score: Mapped[float] = mapped_column(Float, default=60.0)
     last_upload_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
@@ -330,13 +365,65 @@ class Publication(Base):
     external_url: Mapped[str | None] = mapped_column(String(300))
     scheduled_for: Mapped[datetime | None] = mapped_column(UTCDateTime)
     uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
-    visibility: Mapped[str] = mapped_column(String(16), default=Visibility.PRIVATE)
+    visibility: Mapped[str] = mapped_column(String(16), default=Visibility.PRIVATE)  # requested
     request_id: Mapped[str] = mapped_column(String(64), default=new_id, unique=True)
     upload_session_uri: Mapped[str | None] = mapped_column(String(2048))
     error_code: Mapped[str | None] = mapped_column(String(64))
     safe_error_message: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Frozen at request time so a retry uploads exactly what the user approved.
+    title: Mapped[str] = mapped_column(String(200), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    category_id: Mapped[str] = mapped_column(String(8), default="22")
+    language: Mapped[str | None] = mapped_column(String(16))
+    made_for_kids: Mapped[bool] = mapped_column(Boolean, default=False)
+    notify_subscribers: Mapped[bool] = mapped_column(Boolean, default=False)
+    automatic: Mapped[bool] = mapped_column(Boolean, default=False)
+    job_id: Mapped[str | None] = mapped_column(String(32))
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer)
+    bytes_uploaded: Mapped[int] = mapped_column(Integer, default=0)
+    session_created_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # True once the last byte was sent but YouTube's answer was not received (outcome unknown).
+    final_chunk_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    # What YouTube reports (separate from ``status`` which is only the upload lifecycle).
+    availability: Mapped[str] = mapped_column(String(16), default=Availability.UNKNOWN)
+    privacy_actual: Mapped[str | None] = mapped_column(String(16))
+    youtube_upload_status: Mapped[str | None] = mapped_column(String(32))
+    rejection_reason: Mapped[str | None] = mapped_column(String(100))
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    rendered_clip: Mapped[RenderedClip] = relationship()
+    channel: Mapped[Channel] = relationship()
+
+
+class OAuthState(Base):
+    """A pending authorisation: single use, short lived, bound to the browser that started it."""
+
+    __tablename__ = "oauth_states"
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 of the state value
+    browser_hash: Mapped[str] = mapped_column(String(64))  # sha256 of the cookie set at start
+    code_verifier: Mapped[str] = mapped_column(String(128))  # PKCE
+    channel_id: Mapped[str | None] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"))
+    redirect_uri: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class QuotaUsage(Base):
+    """Local ledger of YouTube API calls per Pacific-time day (Google resets quota at PT midnight)."""
+
+    __tablename__ = "quota_usage"
+    __table_args__ = (UniqueConstraint("day", "bucket", name="uq_quota_day_bucket"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    day: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD in America/Los_Angeles
+    bucket: Mapped[str] = mapped_column(String(16))  # "insert" (videos.insert calls) | "units"
+    used: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 

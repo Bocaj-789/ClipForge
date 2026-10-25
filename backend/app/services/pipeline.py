@@ -48,6 +48,9 @@ from app.services.discovery.base import DiscoveryResult
 from app.services.intelligence.candidate_extractor import sentences_from_segments, validate_range
 from app.services.intelligence.llm_provider import ClipProvider, HeuristicProvider, OllamaProvider
 from app.services.intelligence.metadata import suggest_description, suggest_hashtags, suggest_title
+from app.services.publishing import service as publishing
+from app.services.publishing.deps import PublishDeps, make_deps
+from app.services.publishing.uploader import UploadDeferred, run_publish
 from app.services.queue import service as q
 from app.services.queue.states import Priority
 from app.services.rendering.ffmpeg import Cancelled, probe
@@ -82,6 +85,7 @@ class JobContext:
     provider_factory: Callable[[Config, AppSettings], tuple[ClipProvider, str | None]] | None = None
     discovery_factory: Callable[[Source], Any] | None = None
     providers_factory: Callable[[Config, AppSettings], Sequence[MediaProvider]] | None = None
+    publish_deps: PublishDeps | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -598,7 +602,34 @@ def handle_render(ctx: JobContext) -> dict[str, Any]:
         object_id=rc.id,
         details={"profile": profile, "seconds": res.seconds},
     )
-    return {"rendered_clip_id": rc.id, "seconds": res.seconds, "warnings": res.warnings}
+    out: dict[str, Any] = {"rendered_clip_id": rc.id, "seconds": res.seconds, "warnings": res.warnings}
+    # Optional automatic publishing. It must never turn a successful render into a failed job.
+    try:
+        with ctx.db.begin_nested():
+            queued = publishing.auto_publish_after_render(ctx.db, ctx.cfg, s, rc)
+        n = sum(1 for o in queued if o.outcome in ("created", "retried"))
+        if n:
+            ctx.notes.append(f"Automatisk publicering köad till {n} kanal(er).")
+            out["auto_publish"] = n
+    except Exception:
+        log.exception("automatic publishing hook failed for rendered clip %s", rc.id)
+    return out
+
+
+def handle_publish(ctx: JobContext) -> dict[str, Any]:
+    deps = ctx.publish_deps or make_deps(ctx.cfg)
+    try:
+        return run_publish(
+            ctx.db,
+            ctx.job,
+            ctx.settings,
+            deps,
+            ctx.cfg,
+            progress=ctx.progress,
+            cancelled=ctx.cancelled,
+        )
+    except UploadDeferred as d:
+        raise Defer(d.until, d.reason) from d
 
 
 def handle_discover(ctx: JobContext) -> dict[str, Any]:
@@ -672,12 +703,17 @@ HANDLERS: dict[str, Callable[[JobContext], dict[str, Any]]] = {
     JobType.TRANSCRIBE: handle_transcribe,
     JobType.EXTRACT_CLIPS: handle_extract_clips,
     JobType.RENDER: handle_render,
+    JobType.PUBLISH: handle_publish,
     JobType.DISCOVER: handle_discover,
 }
 
 
 def on_job_failed(db: Session, job: Job) -> None:
-    """Reflect a job's terminal failure/block on its candidate video."""
+    """Reflect a job's terminal failure/block on its candidate video (or its publication)."""
+    if job.job_type == JobType.PUBLISH:
+        # A failed upload says nothing about the source video; only the publication changes.
+        publishing.sync_job_change(db, job)
+        return
     if not job.candidate_video_id:
         return
     cand = db.get(CandidateVideo, job.candidate_video_id)

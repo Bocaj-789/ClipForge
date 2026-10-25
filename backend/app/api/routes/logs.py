@@ -87,7 +87,7 @@ def export(_: Principal = Depends(require_user), db: Session = Depends(get_db)) 
 
 @router.get("/analytics/summary")
 def analytics_summary(_: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
-    """Only real, locally measured numbers. Platform metrics need OAuth (not yet implemented)."""
+    """Only real, locally measured numbers. Platform metrics (views etc.) are not collected yet."""
     since = utcnow() - timedelta(days=30)
     renders = db.scalars(select(RenderedClip).where(RenderedClip.created_at >= since)).all()
     trs = db.scalars(select(Transcript).where(Transcript.created_at >= since)).all()
@@ -126,6 +126,6 @@ def analytics_summary(_: Principal = Depends(require_user), db: Session = Depend
         "publications_total": db.scalar(select(func.count()).select_from(Publication)) or 0,
         "platform_metrics": {
             "available": False,
-            "reason": "Kräver ansluten kanal via OAuth och YouTube Analytics API (planerat).",
+            "reason": "Visningsstatistik hämtas inte ännu: YouTube Analytics-integrationen är inte byggd.",
         },
     }

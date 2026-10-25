@@ -21,11 +21,14 @@ from app.config import Config, get_config
 from app.core.errors import ErrorCode, JobError
 from app.db.base import utcnow
 from app.db.migrate import upgrade_to_head
-from app.db.models import Job, JobStatus, JobType, Source, WorkerHeartbeat
+from app.db.models import Channel, Job, JobStatus, JobType, Source, WorkerHeartbeat
 from app.db.session import init_engine, new_session, session_scope
 from app.logging_config import setup_logging
 from app.services import agent, pipeline, workspace
 from app.services.discovery.adapters import LocalFolderAdapter, RssAdapter, YouTubeApiAdapter
+from app.services.publishing import service as publishing
+from app.services.publishing import uploader
+from app.services.publishing.deps import PublishDeps, make_deps
 from app.services.queue import service as q
 from app.services.queue.states import DISK_HEAVY_TYPES, Priority
 from app.services.rendering import ffmpeg
@@ -38,8 +41,15 @@ FAIRNESS_EVERY = 5
 
 
 class Worker:
-    def __init__(self, cfg: Config, *, lanes: tuple[str, ...] = ("heavy", "io", "light")) -> None:
+    def __init__(
+        self,
+        cfg: Config,
+        *,
+        lanes: tuple[str, ...] = ("heavy", "io", "light"),
+        publish_deps: PublishDeps | None = None,
+    ) -> None:
         self.cfg = cfg
+        self.publish_deps = publish_deps or make_deps(cfg)
         self.worker_id = f"{socket.gethostname()}-{os.getpid()}"
         self.lanes = lanes
         self.shutdown = threading.Event()
@@ -87,6 +97,14 @@ class Worker:
         storage = storage_status(self.cfg.data_dir, s)
         if storage.level == "critical":
             deg["storage"] = f"{storage.reason} Nya hämtningar och renderingar är pausade."
+        with session_scope() as db:
+            connected = db.scalar(
+                select(func.count()).select_from(Channel).where(Channel.token_reference.is_not(None))
+            )
+        if connected:
+            store_ok, store_why = self.publish_deps.store.available()
+            if not store_ok:
+                deg["token_store"] = store_why or "Säker tokenlagring saknas; uppladdningar kan inte köras."
         with self._lock:
             self.degraded = deg
 
@@ -147,10 +165,19 @@ class Worker:
                 n += 1
         return n
 
+    def refresh_publications(self) -> int:
+        """Read back what YouTube reports for videos that are still processing or scheduled."""
+        with session_scope() as db:
+            pubs = uploader.due_for_refresh(db)
+            if not pubs:
+                return 0
+            return uploader.refresh_availability(db, self.publish_deps, load_settings(db), pubs)
+
     def maintenance_loop(self) -> None:
         last_health = 0.0
         last_sched = 0.0
         last_cleanup = 0.0
+        last_refresh = time.monotonic()  # first status refresh 10 minutes after start
         while not self.shutdown.is_set():
             t = time.monotonic()
             try:
@@ -160,6 +187,7 @@ class Worker:
                 self.heartbeat()
                 with session_scope() as db:
                     q.recover_expired_leases(db)
+                    publishing.reconcile(db)
                     workspace.cleanup_orphans(db, self.cfg)
                     ctl = agent.get_control(db)
                     if ctl.desired_state == "draining" and not self.current:
@@ -170,6 +198,9 @@ class Worker:
                 if t - last_cleanup > 3600:
                     cleanup_stale_temp(self.cfg.tmp_dir)
                     last_cleanup = t
+                if t - last_refresh > 600:
+                    self.refresh_publications()
+                    last_refresh = t
             except Exception:
                 log.exception("maintenance loop error")
             self.shutdown.wait(10)
@@ -246,6 +277,7 @@ class Worker:
             progress=progress,
             cancelled=cancelled,
             discovery_factory=self.discovery_factory,
+            publish_deps=self.publish_deps,
         )
         handler = pipeline.HANDLERS.get(job.job_type)
         log.info(

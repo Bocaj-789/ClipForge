@@ -5,8 +5,9 @@ transcribes them locally, proposes self-contained 20–60 s moments with transpa
 9:16 MP4s with burned-in captions for you to review. It runs entirely on your Mac with no paid services.
 
 Status of every feature: [docs/CHECKLIST.md](docs/CHECKLIST.md). Short version: the queue, rights gate, local
-pipeline, dashboard, discovery and channel configuration work and are tested. **YouTube OAuth, uploading and
-YouTube analytics are not built yet** (phase 6–8); nothing is ever published.
+pipeline, dashboard, discovery, multi-channel YouTube connection and uploading work and are tested against a
+simulated Google. **A real upload has not been verified yet** because it needs your Google Cloud credentials
+(see [docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md)). YouTube analytics are not built yet.
 
 ## What it does not do
 
@@ -69,13 +70,14 @@ Every video carries a rights status: `user_owned`, `licensed`, `public_domain_ve
 rendering and (later) publishing. The check runs in every pipeline stage, not only at submission. Discovery
 never grants rights; discovered videos inherit only what you declared for the source.
 
-## Publishing (not built yet)
-
-Channels can be configured (caps, spacing, schedule windows, visibility, templates) and the deterministic
-publication policy is implemented and tested (global kill switch, per-channel opt-in with a typed confirmation,
-daily caps, spacing, rights, review status, media validation). OAuth and upload are phase 6; see
-[docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md) for the current quota rules and what that phase will need.
-
+## Publishing
+Press *Lägg till YouTube-kanal* on the Kanaler page as many times as you like to connect channels through Google's
+OAuth consent screen (refresh tokens go to the macOS Keychain). Turn on automatic publishing and every finished
+clip is uploaded to all connected channels, **privately** unless you explicitly allow public publishing per
+channel. Each channel gets its own job with resumable upload, retries, duplicate protection and history; the
+*Publicering* page shows progress, YouTube links, and whether a video is merely uploaded or actually public. The
+deterministic policy (rights, approval, privacy opt-in, daily caps, API quota) gates every upload. One-time
+Google Cloud setup, quota limits and troubleshooting: [docs/YOUTUBE_SETUP.md](docs/YOUTUBE_SETUP.md).
 ## Remote access
 
 Off. The server binds to 127.0.0.1 and refuses any other bind address. See [docs/SECURITY.md](docs/SECURITY.md)

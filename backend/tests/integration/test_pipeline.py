@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Config
 from app.db.models import (
+    AuditEvent,
     CandidateStatus,
     CandidateVideo,
     ClipCandidate,
@@ -237,3 +238,58 @@ def test_cancel_running_render(cfg: Config, db: Session, monkeypatch, tmp_path: 
     }
     assert JobStatus.CANCELLED in statuses
     assert not list(cfg.clips_dir.iterdir())
+
+
+def test_render_then_automatic_upload_of_the_real_file(
+    cfg: Config, db: Session, monkeypatch, tmp_path: Path
+) -> None:
+    """Real ffmpeg render -> automatic publish hook -> publish jobs -> (mocked) YouTube upload."""
+    import hashlib
+
+    from pydantic import SecretStr
+
+    from app.db.models import Channel, Publication
+    from app.services.publishing.deps import PublishDeps
+    from app.services.publishing.secret_store import MemoryStore
+    from tests.fake_google import FakeGoogle
+    from tests.publishing_helpers import make_channel
+
+    cfg.google_client_id, cfg.google_client_secret = "cid.apps.googleusercontent.com", SecretStr("secret")
+    google = FakeGoogle()
+    deps = PublishDeps(
+        cfg=cfg, store=MemoryStore(), http_factory=google.client, chunk_size=256 * 1024, sleep=lambda s: None
+    )
+    make_channel(
+        deps, google, "Autokanal", "UC_AUTO",
+        auto_publish_enabled=True, auto_publish_min_score=0.0, min_spacing_minutes=0, max_uploads_per_day=5,
+    )  # fmt: skip
+    cand = _import(db, cfg, make_video(tmp_path / "src.mp4", seconds=45))
+    s = load_settings(db)
+    s.auto_publish_global_enabled = True
+    save_settings(db, s)
+    db.commit()
+
+    eng = FakeEngine()
+    monkeypatch.setattr(pipeline, "default_engine", lambda c, st: eng)
+    w = Worker(cfg, publish_deps=deps)
+    w.check_health()
+    _drain(w, limit=60)
+    db.expire_all()
+
+    assert db.get(CandidateVideo, cand.id).status == CandidateStatus.READY
+    renders = db.scalars(select(RenderedClip)).all()
+    pubs = db.scalars(select(Publication)).all()
+    assert len(renders) == 2 and len(pubs) == 2, [
+        (e.action, e.safe_details_json) for e in db.scalars(select(AuditEvent)) if "publication" in e.action
+    ]
+    assert all(p.automatic and p.status == "uploaded" and p.external_video_id for p in pubs)
+    for p in pubs:
+        rc = db.get(RenderedClip, p.rendered_clip_id)
+        on_disk = hashlib.sha256((cfg.data_dir / rc.file_path).read_bytes()).hexdigest()
+        assert google.video_sha[p.external_video_id] == on_disk == rc.checksum
+        res = google.videos[p.external_video_id]
+        assert res["status"]["privacyStatus"] == "private"  # automation defaults to private
+        assert res["snippet"]["title"] == rc.title_suggestion
+    assert db.scalars(select(Channel)).one().last_upload_at is not None
+    jobs = db.scalars(select(Job).where(Job.job_type == "publish")).all()
+    assert len(jobs) == 2 and all(j.status == JobStatus.SUCCEEDED for j in jobs)

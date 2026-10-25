@@ -125,11 +125,17 @@ def doctor() -> int:
         "byggd" if dist.exists() else "ej byggd – cd frontend && npm run build",
     )
     line("YouTube API-nyckel", None, "konfigurerad" if cfg.youtube_api_key else "ej konfigurerad (valfri)")
+    from app.services.publishing.secret_store import get_secret_store
+
     line(
         "OAuth-klient",
         None,
-        "finns" if (cfg.secrets_dir / "google_client_secret.json").exists() else "ej konfigurerad (fas 6)",
+        "konfigurerad" if cfg.google_oauth_client() else "ej konfigurerad (se docs/YOUTUBE_SETUP.md)",
     )
+    store = get_secret_store(cfg)
+    store_ok, store_why = store.available()
+    line("Tokenlagring", store_ok, store.name + ("" if store_ok else f": {store_why}"))
+    line("Redirect-URI", None, cfg.oauth_redirect_uri)
     return 0 if ok else 1
 
 

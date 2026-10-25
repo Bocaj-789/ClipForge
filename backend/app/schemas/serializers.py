@@ -5,10 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from app.db.models import (
+    Availability,
     CandidateVideo,
     Channel,
     ClipCandidate,
+    ConnectionState,
     Job,
+    Publication,
     RenderedClip,
     Source,
 )
@@ -58,6 +61,11 @@ def job(j: Job) -> dict[str, Any]:
                 "seconds",
                 "rendered_clip_id",
                 "method",
+                "publication_id",
+                "video_id",
+                "url",
+                "availability",
+                "auto_publish",
             }
         },
     }
@@ -206,8 +214,69 @@ def channel(c: Channel) -> dict[str, Any]:
         "min_clip_seconds": c.min_clip_seconds,
         "max_clip_seconds": c.max_clip_seconds,
         "late_policy": c.late_policy,
-        "oauth_connected": c.token_reference is not None,
+        # Never the token or its secret-store reference: only whether a usable connection exists.
+        "oauth_connected": c.token_reference is not None and c.connection_state == ConnectionState.CONNECTED,
+        "connection_state": c.connection_state,
+        "connection_error": c.connection_error,
         "oauth_connected_at": c.oauth_connected_at,
+        "youtube_title": c.youtube_title,
+        "youtube_handle": c.youtube_handle,
+        "youtube_url": f"https://www.youtube.com/channel/{c.external_channel_id}"
+        if c.external_channel_id
+        else None,
+        "allow_public": c.allow_public,
+        "category_id": c.category_id,
+        "made_for_kids": c.made_for_kids,
+        "notify_subscribers": c.notify_subscribers,
+        "auto_publish_min_score": c.auto_publish_min_score,
         "last_upload_at": c.last_upload_at,
         "created_at": c.created_at,
+    }
+
+
+def publication(p: Publication, *, job: Job | None = None, clip_title: str | None = None) -> dict[str, Any]:
+    """Upload success (``status == 'uploaded'``) and public visibility (``availability``) are separate."""
+    size = p.file_size_bytes or 0
+    return {
+        "id": p.id,
+        "rendered_clip_id": p.rendered_clip_id,
+        "channel_id": p.channel_id,
+        "channel_name": p.channel.display_name if p.channel is not None else None,
+        "clip_title": clip_title,
+        "status": p.status,
+        "upload_succeeded": p.external_video_id is not None,
+        "availability": p.availability,
+        "is_public": p.availability == Availability.PUBLIC,
+        "visibility_requested": p.visibility,
+        "privacy_actual": p.privacy_actual,
+        "scheduled_for": p.scheduled_for,
+        "uploaded_at": p.uploaded_at,
+        "external_video_id": p.external_video_id,
+        "external_url": p.external_url,
+        "youtube_upload_status": p.youtube_upload_status,
+        "rejection_reason": p.rejection_reason,
+        "title": p.title,
+        "bytes_uploaded": p.bytes_uploaded,
+        "file_size_bytes": p.file_size_bytes,
+        "progress_percent": round(100 * p.bytes_uploaded / size, 1)
+        if size and not p.external_video_id
+        else None,
+        "error_code": p.error_code,
+        "safe_error_message": p.safe_error_message,
+        "notice": (p.metadata_json or {}).get("notice"),
+        "automatic": p.automatic,
+        "last_checked_at": p.last_checked_at,
+        "created_at": p.created_at,
+        "updated_at": p.updated_at,
+        "job": {
+            "id": job.id,
+            "status": job.status,
+            "stage": job.stage,
+            "attempt_count": job.attempt_count,
+            "max_attempts": job.max_attempts,
+            "next_attempt_at": job.next_attempt_at,
+            "cancel_requested": job.cancel_requested,
+        }
+        if job is not None
+        else None,
     }

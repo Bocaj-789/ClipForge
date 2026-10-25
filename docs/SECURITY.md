@@ -29,9 +29,21 @@ security-sensitive even though it is single-user and local.
 - **Secrets:** `.env` and `data/` are gitignored; logs and audit details pass through a redaction filter; API
   responses never include keys or tokens; backups exclude `data/secrets` and session rows.
 
-## Not yet implemented
+## YouTube OAuth and tokens
+- Authorization-code flow with PKCE (S256). `state` is 256-bit, stored hashed, single use, valid 10 minutes and
+  bound to the starting browser by a `Lax` cookie scoped to the callback path (the `Strict` session cookie is not
+  sent on Google's cross-site redirect). The callback performs no action without a valid state.
+- Refresh tokens are stored only in the macOS Keychain (via the `keyring` package, no secret on a command line).
+  The DB keeps a reference. Access tokens live in process memory for under an hour. The client secret stays in
+  `.env`/`data/secrets` (gitignored, excluded from backups) and is only sent to Google by the server.
+- Tokens, codes and `state` are redacted from logs, audit events and the uvicorn access log; no API response
+  contains them. Tests scan responses, the SQLite files and log files for token strings.
+- Fails closed: without a usable Keychain no channel can be connected. `CLIPFORGE_TOKEN_STORE=file` is an explicit
+  weaker option.
+- Resumable-session URIs from Google are only used if they are https on `*.googleapis.com`.
+- Public (or scheduled-to-be-public) uploads need a per-channel typed opt-in; everything defaults to private.
 
-- OAuth token storage (planned: macOS Keychain via `security`, with a `token_reference` in the DB).
+## Not yet implemented
 - Remote access hardening beyond the above (2FA or an identity-aware proxy).
 
 ## Before enabling remote access
