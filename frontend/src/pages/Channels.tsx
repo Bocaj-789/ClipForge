@@ -214,6 +214,16 @@ export default function Channels() {
     }
   }
 
+  async function deleteChannel(cid: string) {
+    try {
+      await api(`/channels/${cid}`, { method: "DELETE" });
+      q.reload();
+      st.reload();
+    } catch (e) {
+      toast(errorMessage(e), "fail");
+    }
+  }
+
   const oauth = q.data?.oauth;
   const items = q.data?.items ?? [];
   const globalAuto = st.data?.auto_publish_global_enabled ?? false;
@@ -401,9 +411,7 @@ export default function Channels() {
                       <ConfirmButton
                         className="small ghost"
                         message="Ta bort kanalen från ClipForge?"
-                        onConfirm={() =>
-                          post(`/channels/${c.id}`).then(() => undefined)
-                        }
+                        onConfirm={() => deleteChannel(c.id)}
                       >
                         {t.common.delete}
                       </ConfirmButton>
