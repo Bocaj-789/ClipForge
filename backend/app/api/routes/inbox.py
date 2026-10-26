@@ -12,7 +12,15 @@ from sqlalchemy.orm import Session
 from app.api.deps import Principal, get_db, require_user
 from app.core.errors import AppError, ErrorCode, NotFound
 from app.core.security import contained_path
-from app.db.models import CandidateStatus, CandidateVideo, ClipCandidate, Job, RenderedClip, Transcript
+from app.db.models import (
+    CandidateStatus,
+    CandidateVideo,
+    ClipCandidate,
+    Job,
+    Publication,
+    RenderedClip,
+    Transcript,
+)
 from app.db.session import new_session
 from app.schemas import serializers as ser
 from app.services import inbox
@@ -302,6 +310,20 @@ def delete_candidate(
         raise NotFound("Videon")
     if db.scalar(select(Job.id).where(Job.candidate_video_id == cid, Job.status == "running")):
         raise AppError(ErrorCode.CONFLICT, "Videon bearbetas just nu. Avbryt jobbet först.", status_code=409)
+    # Deleting a clip cascades to its publications. Never erase the history of something on YouTube.
+    clip_ids = select(ClipCandidate.id).where(ClipCandidate.candidate_video_id == cid)
+    rendered = select(RenderedClip.id).where(RenderedClip.clip_candidate_id.in_(clip_ids))
+    uploaded = db.scalar(
+        select(func.count())
+        .select_from(Publication)
+        .where(Publication.rendered_clip_id.in_(rendered), Publication.external_video_id.is_not(None))
+    )
+    if uploaded:
+        raise AppError(
+            ErrorCode.CONFLICT,
+            "Videon har uppladdningar till YouTube och kan inte tas bort här. Ta bort dem i YouTube först.",
+            status_code=409,
+        )
     files = []
     for p in c.clips:
         for r in p.renders:
@@ -331,50 +353,3 @@ def delete_candidate(
     return {"ok": True, "files_removed": removed}
 
 
-DISCOVERY_CLEARABLE = [
-    CandidateStatus.DISCOVERED,
-    CandidateStatus.QUEUED,
-    CandidateStatus.AWAITING_MEDIA,
-    CandidateStatus.BLOCKED,
-    CandidateStatus.SKIPPED,
-]
-
-
-@router.post("/candidates/clear-discovered")
-def clear_discovered(
-    request: Request, _: Principal = Depends(require_user), db: Session = Depends(get_db)
-) -> dict:
-    """Delete discovered videos that never reached analysis. Their waiting jobs go with them (cascade).
-
-    Kept: videos that already have a transcript or clip proposals, and videos with a job running right now.
-    Manually added videos and publishing are not affected.
-    """
-    cfg = request.app.state.cfg
-    rows = db.scalars(
-        select(CandidateVideo).where(
-            CandidateVideo.origin == "discovery", CandidateVideo.status.in_(DISCOVERY_CLEARABLE)
-        )
-    ).all()
-    removed = kept = 0
-    for c in rows:
-        running = db.scalar(select(Job.id).where(Job.candidate_video_id == c.id, Job.status == "running"))
-        analysed = db.scalar(select(Transcript.id).where(Transcript.candidate_video_id == c.id))
-        if c.clips or analysed or running:
-            kept += 1
-            continue
-        if c.media_path and not c.media_is_user_original:
-            path = contained_path(cfg.data_dir, c.media_path)
-            if path.is_file():
-                path.unlink()
-        db.delete(c)
-        removed += 1
-    db.flush()
-    invalidate_cache()
-    audit.record(
-        db,
-        "candidate.discovery_cleared",
-        actor="user",
-        object_type="candidate",
-        details={"removed": removed, "kept": kept},
-    )
-    return {"removed": removed, "kept": kept}

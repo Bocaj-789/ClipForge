@@ -7,6 +7,7 @@ export const sv = {
     queue: "Kö",
     clips: "Klipp",
     discovery: "Upptäckt",
+    videos: "Videor",
     channels: "Kanaler",
     publishing: "Publicering",
     analytics: "Analys",

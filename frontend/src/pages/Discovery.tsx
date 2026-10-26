@@ -7,6 +7,8 @@ import { t } from "../i18n/sv";
 import { fmtRelative, fmtTime } from "../lib/format";
 import { CandidateRow } from "./Inbox";
 
+const CLEARED_KEY = "clipforge.discoveryClearedAt";
+
 function AddSource({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState("rss");
   const [name, setName] = useState("");
@@ -136,6 +138,15 @@ export default function Discovery() {
     (s) => api("/candidates?origin=discovery&limit=50", { signal: s }),
     10000,
   );
+  // "Rensa vyn" only hides older results in this browser. The videos stay under Videor.
+  const [clearedAt, setClearedAt] = useState<string | null>(() =>
+    localStorage.getItem(CLEARED_KEY),
+  );
+  const shown = (found.data?.items ?? []).filter(
+    (c) =>
+      !clearedAt ||
+      new Date(c.discovered_at).getTime() > new Date(clearedAt).getTime(),
+  );
   const act = async (path: string, method = "POST") => {
     try {
       await api(path, { method });
@@ -222,30 +233,38 @@ export default function Discovery() {
       <section className="section" aria-labelledby="found-h">
         <div className="spread">
           <h2 id="found-h">Senast upptäckta</h2>
-          <ConfirmButton
-            className="small ghost"
-            message="Ta bort de upptäckta videor som inte har börjat analyseras? Köade jobb för dem avbryts. Redan analyserade videor finns kvar."
-            onConfirm={async () => {
-              try {
-                const r = await api<{ removed: number; kept: number }>("/candidates/clear-discovered", {
-                  method: "POST",
-                });
-                toast(`${r.removed} borttagna, ${r.kept} behållna.`);
-                found.reload();
-                sources.reload();
-              } catch (e) {
-                toast(errorMessage(e), "fail");
-              }
-            }}
-          >
-            Rensa senast upptäckta
-          </ConfirmButton>
+          <div className="row">
+            {clearedAt && (
+              <button
+                className="small ghost"
+                onClick={() => {
+                  localStorage.removeItem(CLEARED_KEY);
+                  setClearedAt(null);
+                }}
+              >
+                Visa alla igen
+              </button>
+            )}
+            <ConfirmButton
+              className="small ghost"
+              message="Rensa listan här? Videorna finns kvar under Videor."
+              onConfirm={() => {
+                const now = new Date().toISOString();
+                localStorage.setItem(CLEARED_KEY, now);
+                setClearedAt(now);
+              }}
+            >
+              Rensa vyn
+            </ConfirmButton>
+          </div>
         </div>
-        {found.data && found.data.items.length === 0 ? (
-          <Empty>Inget upptäckt ännu.</Empty>
+        {found.data && shown.length === 0 ? (
+          <Empty>
+            {clearedAt ? "Inget nytt sedan du rensade listan." : "Inget upptäckt ännu."}
+          </Empty>
         ) : (
           <ul className="list">
-            {found.data?.items.map((c) => (
+            {shown.map((c) => (
               <CandidateRow key={c.id} c={c} onChange={found.reload} />
             ))}
           </ul>

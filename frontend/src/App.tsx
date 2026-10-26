@@ -19,6 +19,7 @@ import { t } from "./i18n/sv";
 import { setTimezone } from "./lib/format";
 import Analytics from "./pages/Analytics";
 import Statistics from "./pages/Statistics";
+import Videos from "./pages/Videos";
 import Channels from "./pages/Channels";
 import ClipDetail from "./pages/ClipDetail";
 import Clips from "./pages/Clips";
@@ -50,6 +51,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     ["/ko", t.nav.queue],
     ["/klipp", t.nav.clips, data?.clips_awaiting_review],
     ["/upptackt", t.nav.discovery],
+    ["/videor", t.nav.videos],
     ["/kanaler", t.nav.channels],
     ["/publicering", t.nav.publishing],
     ["/analys", t.nav.analytics],
@@ -97,6 +99,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <Route path="/klipp/:id" element={<ClipDetail />} />
             <Route path="/video/:id" element={<VideoDetail />} />
             <Route path="/upptackt" element={<Discovery />} />
+            <Route path="/videor" element={<Videos />} />
             <Route path="/kanaler" element={<Channels />} />
             <Route path="/publicering" element={<Publications />} />
             <Route path="/analys" element={<Analytics />} />
