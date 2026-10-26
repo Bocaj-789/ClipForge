@@ -438,6 +438,15 @@ td {
   height: 100%;
   background: var(--bronze);
 }
+.progress-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.progress-value {
+  min-width: 3.5em;
+  text-align: right;
+}
 
 /* ---------------------------------------------------------------- pills */
 .pill {

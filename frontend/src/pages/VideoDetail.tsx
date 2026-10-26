@@ -199,7 +199,9 @@ export default function VideoDetail() {
               <div className="row grow">
                 <JobPill status={j.status} />
                 <span>{t.pipeline.stages[j.job_type]}</span>
-                {j.status === "running" && <Progress value={j.progress_percent} />}
+                {j.status === "running" && (
+                  <Progress value={j.progress_percent} label={t.pipeline.stages[j.job_type]} showValue />
+                )}
                 <span className="small muted">{fmtRelative(j.updated_at)}</span>
               </div>
               {j.safe_error_message && <p className="small">{j.safe_error_message}</p>}

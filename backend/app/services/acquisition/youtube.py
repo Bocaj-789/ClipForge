@@ -35,6 +35,9 @@ log = logging.getLogger("clipforge.youtube")
 
 _MAX_ERROR_DETAIL = 200
 _SKIP_SUFFIXES = {".part", ".ytdl", ".temp", ".tmp", ".json", ".vtt", ".srt", ".jpg", ".webp", ".png"}
+# The download fills job progress from 2 to 90 percent. The rest is yt-dlp's merge, probe and move.
+DOWNLOAD_START = 2.0
+DOWNLOAD_END = 90.0
 
 
 def build_format_selector(max_height: int | None) -> str:
@@ -308,28 +311,48 @@ class YouTubeProvider:
 
         self._video_id(request.url)
         request.workdir.mkdir(parents=True, exist_ok=True)
-        peak = [0.0]
-        stream_sizes: dict[str, int] = {}
+        peak = [DOWNLOAD_START]
+        stream_done: dict[str, int] = {}
+        stream_total: dict[str, int] = {}
+        expected_total: list[int | None] = [None]  # set after extract_info, read by the hook
         too_large = [False]
         on_progress: ProgressFn = request.progress
 
         def hook(d: dict[str, Any]) -> None:
             if request.cancelled():
                 raise DownloadCancelled("cancelled")
-            if d.get("status") != "downloading":
+            status = d.get("status")
+            if status not in ("downloading", "finished"):
                 return
-            total = d.get("total_bytes") or d.get("total_bytes_estimate")
-            done = d.get("downloaded_bytes") or 0
+            name = str(d.get("filename"))
+            total = int(d.get("total_bytes") or d.get("total_bytes_estimate") or 0)
+            # Bytes only move forward per stream. A low size estimate must never push the fraction past 1.
+            done = max(stream_done.get(name, 0), int(d.get("downloaded_bytes") or 0))
+            if status == "finished":
+                done = max(done, total)
+            stream_done[name] = done
             if total:
-                # Cap the combined size of the video + audio streams (max_filesize would instead hide
-                # the formats and look like "nothing downloadable").
-                stream_sizes[str(d.get("filename"))] = int(total)
-                if sum(stream_sizes.values()) > request.max_bytes:
-                    too_large[0] = True
-                    raise DownloadCancelled("too large")
-            if total:
-                peak[0] = max(peak[0], min(88.0, 88.0 * done / total))
-            on_progress(peak[0] or 2.0, "hämtar")
+                stream_total[name] = max(total, done, stream_total.get(name, 0))
+            # Cap the combined size of the video + audio streams (max_filesize would instead hide
+            # the formats and look like "nothing downloadable").
+            if sum(stream_total.values()) > request.max_bytes:
+                too_large[0] = True
+                raise DownloadCancelled("too large")
+            expected = expected_total[0]
+            if expected:
+                # Sizes from the format list cover every stream, so the bar spans the whole transfer.
+                numerator, denominator = sum(stream_done.values()), expected
+            else:
+                # Without full sizes, measure only the streams whose total is known.
+                numerator = sum(stream_done[k] for k in stream_total)
+                denominator = sum(stream_total.values())
+            if denominator <= 0:
+                return
+            fraction = min(1.0, max(0.0, numerator / denominator))
+            value = DOWNLOAD_START + (DOWNLOAD_END - DOWNLOAD_START) * fraction
+            if value > peak[0] + 0.1:
+                peak[0] = value
+                on_progress(round(value, 1), "hämtar")
 
         opts = self._options(
             str(request.workdir / "%(id)s.%(ext)s"),
@@ -351,7 +374,15 @@ class YouTubeProvider:
                 duration = info.get("duration")
                 if isinstance(duration, int | float) and duration > request.max_duration_seconds:
                     raise permanent(ErrorCode.MEDIA_TOO_LONG, "Videon är längre än tillåten maxlängd.")
-                on_progress(2.0, "hämtar")
+                # Expected size of the whole transfer. None when any stream size is unknown.
+                formats = info.get("requested_formats") or [info]
+                sizes = [
+                    int(f.get("filesize") or f.get("filesize_approx") or 0)
+                    for f in formats
+                    if isinstance(f, dict)
+                ]
+                expected_total[0] = sum(sizes) if sizes and all(sizes) else None
+                on_progress(DOWNLOAD_START, "hämtar")
                 done_info = ydl.process_ie_result(info, download=True)
         except DownloadCancelled as e:
             if too_large[0]:

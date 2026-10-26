@@ -117,17 +117,37 @@ export function Notice({
   );
 }
 
-export function Progress({ value }: { value: number }) {
-  return (
+export function Progress({
+  value,
+  label,
+  showValue = false,
+}: {
+  value: number;
+  label?: string;
+  showValue?: boolean;
+}) {
+  const pct = Math.min(100, Math.max(0, value));
+  const bar = (
     <div
       className="progress"
       role="progressbar"
-      aria-valuenow={Math.round(value)}
+      aria-label={label}
+      aria-valuenow={Math.round(pct)}
       aria-valuemin={0}
       aria-valuemax={100}
+      aria-valuetext={`${Math.round(pct)} ${t.common.percent}`}
     >
-      <span style={{ width: `${Math.max(2, Math.min(100, value))}%` }} />
+      <span style={{ width: `${pct}%` }} />
     </div>
+  );
+  if (!showValue) return bar;
+  return (
+    <span className="progress-wrap">
+      {bar}
+      <span className="progress-value num" aria-hidden="true">
+        {Math.round(pct)} {t.common.percent}
+      </span>
+    </span>
   );
 }
 

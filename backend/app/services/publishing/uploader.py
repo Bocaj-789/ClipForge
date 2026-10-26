@@ -56,6 +56,7 @@ from app.services.publishing.youtube import (
     derive_availability,
 )
 from app.services.rendering.ffmpeg import Cancelled
+from app.services.retention import clear_uploaded_clip
 from app.services.settings_service import AppSettings
 
 log = logging.getLogger("clipforge.upload")
@@ -456,6 +457,8 @@ def run_publish(
         except YouTubeError as e:
             _raise_for(db, pub, channel, e)
         _record_success(db, pub, channel, clip, video)
+        clear_uploaded_clip(db, cfg, clip)
+        db.commit()
         progress(97, "kontrollerar status hos YouTube")
         try:
             fresh = api.videos_status([str(video["id"])]).get(str(video["id"]))

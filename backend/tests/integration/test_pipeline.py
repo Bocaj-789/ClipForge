@@ -217,7 +217,6 @@ def test_render_then_automatic_upload_of_the_real_file(
     cfg: Config, db: Session, monkeypatch, tmp_path: Path
 ) -> None:
     """Real ffmpeg render -> automatic publish hook -> publish jobs -> (mocked) YouTube upload."""
-    import hashlib
 
     from pydantic import SecretStr
 
@@ -258,7 +257,9 @@ def test_render_then_automatic_upload_of_the_real_file(
     assert all(p.automatic and p.status == "uploaded" and p.external_video_id for p in pubs)
     for p in pubs:
         rc = db.get(RenderedClip, p.rendered_clip_id)
-        on_disk = hashlib.sha256((cfg.data_dir / rc.file_path).read_bytes()).hexdigest()
+        # The local file is removed once YouTube confirms. The uploaded bytes must match the checksum.
+        on_disk = rc.checksum
+        assert not (cfg.data_dir / rc.file_path).exists()
         assert google.video_sha[p.external_video_id] == on_disk == rc.checksum
         res = google.videos[p.external_video_id]
         assert res["status"]["privacyStatus"] == "private"  # automation defaults to private

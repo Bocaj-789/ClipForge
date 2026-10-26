@@ -18,9 +18,9 @@ from app.services.settings_service import AppSettings
 
 AUTO_PUBLISH_CONFIRM_PHRASE = "JAG FÖRSTÅR RISKERNA"
 ALLOW_PUBLIC_CONFIRM_PHRASE = "OFFENTLIG PUBLICERING"
-# Render notes about the crop, not the quality of the result. They stay visible on the clip but do not
-# hold back an upload that would become public. Other warnings (low source resolution, no speech) do.
-INFORMATIONAL_WARNINGS = ("Centrerad beskärning utan motivspårning",)
+# Render notes that do not hold back an upload that would become public: crop hints and low source
+# resolution (accepted by the owner). Other warnings, such as a clip with no speech, still do.
+INFORMATIONAL_WARNINGS = ("Centrerad beskärning utan motivspårning", "Källan har låg upplösning")
 
 
 def blocking_warnings(warnings: list[str] | None) -> list[str]:

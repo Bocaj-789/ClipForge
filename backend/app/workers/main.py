@@ -24,7 +24,7 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import CandidateVideo, Channel, Job, JobStatus, JobType, Source, WorkerHeartbeat
 from app.db.session import init_engine, new_session, session_scope
 from app.logging_config import setup_logging
-from app.services import agent, pipeline, workspace
+from app.services import agent, pipeline, retention, workspace
 from app.services.discovery.adapters import LocalFolderAdapter, RssAdapter, YouTubeApiAdapter
 from app.services.discovery.cc_finder import YouTubeCcSearchAdapter
 from app.services.publishing import quota, uploader
@@ -201,6 +201,7 @@ class Worker:
         last_sched = 0.0
         last_cleanup = 0.0
         last_refresh = time.monotonic()  # first status refresh 10 minutes after start
+        last_retention = 0.0
         while not self.shutdown.is_set():
             t = time.monotonic()
             try:
@@ -224,6 +225,10 @@ class Worker:
                 if t - last_refresh > 600:
                     self.refresh_publications()
                     last_refresh = t
+                if t - last_retention > 3600:
+                    with session_scope() as db:
+                        retention.sweep(db, self.cfg)
+                    last_retention = t
             except Exception:
                 log.exception("maintenance loop error")
             self.shutdown.wait(10)

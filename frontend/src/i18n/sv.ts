@@ -103,6 +103,7 @@ export const sv = {
     never: "Aldrig",
     unknown: "Okänt",
     seconds: "s",
+    percent: "%",
     more: "Visa fler",
   },
   errors: {

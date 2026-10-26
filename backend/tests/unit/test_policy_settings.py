@@ -77,10 +77,15 @@ def test_manual_publish_requires_approval_and_oauth() -> None:
 
 
 def test_warnings_only_hold_back_automatic_uploads_that_would_become_public() -> None:
-    warned = _clip(warnings_json=["Källan har låg upplösning; beskärningen skalas upp kraftigt."])
+    warned = _clip(warnings_json=["Inga ord i transkriptionen för detta intervall – inga undertexter."])
     assert _check(clip=warned).allowed  # private: safe to review in YouTube Studio
     assert not _check(clip=warned, channel=_channel(allow_public=True), visibility="public").allowed
     assert not _check(clip=warned, channel=_channel(allow_public=True), scheduled=True).allowed
+
+
+def test_low_resolution_note_does_not_block_public_release() -> None:
+    low_res = _clip(warnings_json=["Källan har låg upplösning; beskärningen skalas upp kraftigt."])
+    assert _check(clip=low_res, channel=_channel(allow_public=True), scheduled=True).allowed
 
 
 def test_crop_note_alone_does_not_block_public_release() -> None:

@@ -48,7 +48,9 @@ export function CandidateRow({ c, onChange }: { c: Candidate; onChange: () => vo
           <span className="row small">
             <JobPill status={j.status} />
             <span className="muted">{t.pipeline.stages[j.job_type]}</span>
-            {j.status === "running" && <Progress value={j.progress_percent} />}
+            {j.status === "running" && (
+              <Progress value={j.progress_percent} label={t.pipeline.stages[j.job_type]} showValue />
+            )}
           </span>
         )}
         {c.priority > 0 && ["queued", "discovered", "analyzing"].includes(c.status) && (

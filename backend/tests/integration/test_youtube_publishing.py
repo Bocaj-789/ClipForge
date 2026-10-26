@@ -311,8 +311,11 @@ def test_an_uploaded_clip_is_never_uploaded_again(env: Env) -> None:
     rid = env.clip()
     env.publish(rid, [env.channels["A"]])
     env.run()
-    again = env.publish(rid, [env.channels["A"]])
-    assert again["results"][0]["outcome"] == "already_uploaded"
+    # The file was removed after the upload, so the clip is no longer offered for publishing at all.
+    r = env.client.post(
+        f"/api/v1/clips/{rid}/publish", json={"channel_ids": [env.channels["A"]]}, headers=env.h
+    )
+    assert r.status_code == 404
     pid = env.pub("A")["id"]
     assert env.client.post(f"/api/v1/publications/{pid}/retry", json={}, headers=env.h).status_code == 409
     assert env.client.delete(f"/api/v1/publications/{pid}", headers=env.h).status_code == 409
@@ -733,14 +736,26 @@ def test_automatic_publishing_respects_score_warnings_rights_and_daily_cap(env: 
     # Render warnings do not stop a private upload...
     with session_scope() as db:
         db.get(Channel, env.channels["A"]).max_uploads_per_day = 99
-    warned_private = _auto(env, env.clip(review="needs_review", warnings=["låg upplösning"]))
+    warned_private = _auto(
+        env,
+        env.clip(
+            review="needs_review",
+            warnings=["Inga ord i transkriptionen för detta intervall – inga undertexter."],
+        ),
+    )
     assert warned_private[0].outcome == "created"
     # ...but they do stop one that would become public.
     with session_scope() as db:
         ch = db.get(Channel, env.channels["A"])
         ch.allow_public, ch.default_visibility = True, "public"
         ch.schedule_json = {"windows": [["00:00", "23:59"]]}
-    warned_public = _auto(env, env.clip(review="needs_review", warnings=["låg upplösning"]))
+    warned_public = _auto(
+        env,
+        env.clip(
+            review="needs_review",
+            warnings=["Inga ord i transkriptionen för detta intervall – inga undertexter."],
+        ),
+    )
     assert warned_public[0].outcome == "blocked" and any("varningar" in r for r in warned_public[0].reasons)
     with session_scope() as db:
         ch = db.get(Channel, env.channels["A"])
@@ -872,3 +887,36 @@ def test_spaced_release_needs_public_opt_in_and_skips_upload_spacing(env: Env) -
     assert out[0].outcome == "blocked" and any("Offentlig" in r for r in out[0].reasons)
     _make_allowed_public(env, "A")
     assert _auto(env, env.clip())[0].outcome == "created"  # upload spacing does not apply to spaced releases
+
+
+def test_uploaded_clip_file_is_removed_once_youtube_confirms(env: Env) -> None:
+    rid = env.clip()
+    path = _path(env, rid)
+    env.publish(rid, [env.channels["A"]])
+    env.run()
+    assert env.pub("A")["status"] == "uploaded"
+    assert not path.exists()
+    with session_scope() as db:
+        assert db.get(RenderedClip, rid).deleted_at is not None
+    assert env.pub("A")["external_url"].startswith("https://www.youtube.com/watch?v=")  # history intact
+
+
+def test_file_is_kept_until_every_selected_channel_has_uploaded(env: Env) -> None:
+    env.google.fault_for("UC_B", "start", error_response(403, "forbidden", "Nope"))
+    rid = env.clip()
+    path = _path(env, rid)
+    env.publish(rid, [env.channels["A"], env.channels["B"]])
+    env.run()
+    assert env.pub("A")["status"] == "uploaded" and env.pub("B")["status"] == "blocked"
+    assert path.exists()  # channel B still needs the file for its retry
+    env.google.account_faults.clear()
+    r = env.client.post(f"/api/v1/publications/{env.pub('B')['id']}/retry", json={}, headers=env.h)
+    assert r.status_code == 200
+    env.run()
+    assert env.pub("B")["status"] == "uploaded"
+    assert not path.exists()
+
+
+def _path(env: Env, rid: str):  # type: ignore[no-untyped-def]
+    with session_scope() as db:
+        return env.cfg.data_dir / db.get(RenderedClip, rid).file_path

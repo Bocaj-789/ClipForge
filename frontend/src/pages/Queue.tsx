@@ -97,7 +97,11 @@ export default function Queue() {
                     <JobPill status={j.status} />
                     {j.status === "running" && (
                       <div style={{ marginTop: 6 }}>
-                        <Progress value={j.progress_percent} />
+                        <Progress
+                          value={j.progress_percent}
+                          label={t.pipeline.stages[j.job_type] ?? j.job_type}
+                          showValue
+                        />
                       </div>
                     )}
                   </td>

@@ -118,6 +118,7 @@ def approve(rid: str, _: Principal = Depends(require_user), db: Session = Depend
 def reject(rid: str, _: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
     r = _clip(db, rid)
     r.review_status = ReviewStatus.REJECTED
+    r.review_decided_at = utcnow()
     audit.record(db, "clip.rejected", actor="user", object_type="rendered_clip", object_id=rid)
     return ser.rendered(r)
 

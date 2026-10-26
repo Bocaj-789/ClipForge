@@ -300,6 +300,7 @@ class RenderedClip(Base):
     checksum: Mapped[str] = mapped_column(String(64))
     warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     review_status: Mapped[str] = mapped_column(String(16), default=ReviewStatus.NEEDS_REVIEW)
+    review_decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # when it was declined
     render_seconds: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
