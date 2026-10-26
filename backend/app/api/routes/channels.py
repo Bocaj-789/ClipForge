@@ -111,6 +111,15 @@ class AllowPublicIn(AutoPublishIn):
     pass
 
 
+class BulkChannelsIn(BaseModel):
+    """Settings applied to every channel at once. Only the fields that are sent are changed."""
+
+    changes: ChannelPatch = Field(default_factory=ChannelPatch)
+    auto_publish_enabled: bool | None = None
+    allow_public: bool | None = None
+    confirm_phrase: str | None = Field(default=None, max_length=100)
+
+
 def _apply(c: Channel, data: dict) -> None:
     if "schedule" in data and data["schedule"] is not None:
         c.schedule_json = {
@@ -244,6 +253,54 @@ def allow_public(
         severity="warning" if body.enabled else "info",
     )
     return _out(c)
+
+
+@router.post("/bulk-settings")
+def bulk_settings(
+    body: BulkChannelsIn, _: Principal = Depends(require_user), db: Session = Depends(get_db)
+) -> dict:
+    """Apply the same settings to every channel. All or nothing: a rejected value rolls back everything."""
+    typed = (body.confirm_phrase or "").strip().upper()
+    if body.allow_public is True and typed != ALLOW_PUBLIC_CONFIRM_PHRASE:
+        raise AppError(ErrorCode.INVALID_INPUT, f'Skriv "{ALLOW_PUBLIC_CONFIRM_PHRASE}" för att bekräfta.')
+    data = body.changes.model_dump(exclude_unset=True)
+    channels = list(db.scalars(select(Channel).order_by(Channel.created_at)))
+    auto_not_applied: list[dict] = []
+    for c in channels:
+        if body.allow_public is not None:
+            c.allow_public = body.allow_public
+            if not body.allow_public and c.default_visibility == "public":
+                c.default_visibility = "private"
+        if body.auto_publish_enabled is not None:
+            connected = c.token_reference is not None and c.connection_state == ConnectionState.CONNECTED
+            if body.auto_publish_enabled and not connected:
+                auto_not_applied.append(
+                    {
+                        "channel_id": c.id,
+                        "channel_name": c.display_name,
+                        "reason": "Kanalen är inte ansluten.",
+                    }
+                )
+            else:
+                c.auto_publish_enabled = body.auto_publish_enabled
+        _apply(c, data)
+        audit.record(
+            db,
+            "channel.bulk_updated",
+            actor="user",
+            object_type="channel",
+            object_id=c.id,
+            details={
+                "fields": sorted(data),
+                "allow_public": body.allow_public,
+                "auto_publish_enabled": body.auto_publish_enabled,
+            },
+        )
+    return {
+        "changed": [c.display_name for c in channels],
+        "auto_publish_not_applied": auto_not_applied,
+        "channels": [_out(c) for c in channels],
+    }
 
 
 @router.post("/{cid}/disconnect")

@@ -785,15 +785,17 @@ def test_automatic_public_upload_is_scheduled_inside_the_channels_window(env: En
     assert status["privacyStatus"] == "private" and "publishAt" in status
 
 
-def test_automatic_public_requires_the_explicit_opt_in(env: Env) -> None:
+def test_automatic_public_default_without_opt_in_uploads_privately(env: Env) -> None:
     _enable_auto(env, "A")
     with session_scope() as db:
         ch = db.get(Channel, env.channels["A"])
         ch.default_visibility = "public"  # bypassing the API validation on purpose
         ch.allow_public = False
     out = _auto(env, env.clip(review="needs_review"))
-    assert out[0].outcome == "blocked" and any("Offentlig publicering" in r for r in out[0].reasons)
-    assert _jobs() == [] and env.google.insert_calls == 0
+    assert out[0].outcome == "created", out[0].reasons
+    with session_scope() as db:
+        pub = db.scalars(select(Publication)).one()
+        assert pub.visibility == "private" and pub.scheduled_for is None
 
 
 # ---------------------------------------------------------------- status refresh and history
@@ -861,7 +863,10 @@ def test_publishing_status_endpoint(env: Env) -> None:
 def test_spaced_release_puts_each_clip_two_hours_after_the_latest_one(env: Env) -> None:
     _make_allowed_public(env, "A")
     with session_scope() as db:
-        db.get(Channel, env.channels["A"]).release_spacing_minutes = 120
+        ch = db.get(Channel, env.channels["A"])
+        ch.release_spacing_minutes = 120
+        # Round-the-clock windows, so the 2 hour gaps are not moved by publishing windows.
+        ch.schedule_json = {"days": list(range(7)), "windows": [["00:00", "23:59"]]}
     _enable_auto(env, "A")
     for _ in range(3):
         out = _auto(env, env.clip())
@@ -878,15 +883,22 @@ def test_spaced_release_puts_each_clip_two_hours_after_the_latest_one(env: Env) 
     assert [b - a for a, b in zip(parsed, parsed[1:], strict=False)] == [timedelta(minutes=120)] * 2
 
 
-def test_spaced_release_needs_public_opt_in_and_skips_upload_spacing(env: Env) -> None:
+def test_without_public_opt_in_automatic_clip_uploads_privately_with_no_release_time(env: Env) -> None:
     with session_scope() as db:
         db.get(Channel, env.channels["A"]).release_spacing_minutes = 120
         db.get(Channel, env.channels["A"]).min_spacing_minutes = 240
     _enable_auto(env, "A")
     out = _auto(env, env.clip())
-    assert out[0].outcome == "blocked" and any("Offentlig" in r for r in out[0].reasons)
+    assert out[0].outcome == "created", out[0].reasons
+    with session_scope() as db:
+        first = db.scalars(select(Publication).order_by(Publication.created_at)).first()
+        assert first.visibility == "private" and first.scheduled_for is None
     _make_allowed_public(env, "A")
-    assert _auto(env, env.clip())[0].outcome == "created"  # upload spacing does not apply to spaced releases
+    out = _auto(env, env.clip())
+    assert out[0].outcome == "created", out[0].reasons
+    with session_scope() as db:
+        second = db.scalars(select(Publication).order_by(Publication.created_at)).all()[-1]
+        assert second.visibility == "public" and second.scheduled_for is not None
 
 
 def test_uploaded_clip_file_is_removed_once_youtube_confirms(env: Env) -> None:

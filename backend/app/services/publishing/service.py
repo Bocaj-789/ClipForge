@@ -208,14 +208,19 @@ def enqueue_job(db: Session, pub: Publication, clip: RenderedClip, channel: Chan
     return job
 
 
-def release_slot(db: Session, channel: Channel, now: datetime) -> datetime:
-    """Spaced release: the next clip goes out ``release_spacing_minutes`` after the channel's latest release.
+def channel_cadence(channel: Channel) -> timedelta:
+    """Time between a channel's automatic releases, set per channel: release spacing, else minimum spacing."""
+    return timedelta(minutes=channel.release_spacing_minutes or channel.min_spacing_minutes or 0)
+
+
+def release_slot(db: Session, channel: Channel, now: datetime) -> datetime | None:
+    """Next automatic public release for a channel: one cadence step after its latest release.
 
     Every publication that still has a release time (queued, uploaded or scheduled) counts, so a burst
-    of clips lines up in order instead of colliding. The earliest possible time is the YouTube minimum
-    lead from now.
+    of clips lines up in order instead of colliding. The time is moved into the channel's publishing
+    windows. Returns None when no window is free in the next two weeks.
     """
-    spacing = timedelta(minutes=channel.release_spacing_minutes or 0)
+    spacing = channel_cadence(channel)
     earliest = now + MIN_SCHEDULE_LEAD + timedelta(minutes=1)
     times = [
         t if t.tzinfo else t.replace(tzinfo=UTC)
@@ -228,9 +233,8 @@ def release_slot(db: Session, channel: Channel, now: datetime) -> datetime:
         )
         if t is not None
     ]
-    if not times:
-        return earliest
-    return max(earliest, max(times) + spacing)
+    candidate = earliest if not times else max(earliest, max(times) + spacing)
+    return next_slot(channel, candidate)
 
 
 def request_publication(
@@ -267,12 +271,19 @@ def request_publication(
             res.reasons = ["Uppladdningen till den här kanalen pågår redan."]
             continue
 
-        spaced = opts.automatic and bool(channel.release_spacing_minutes)
         privacy: str
         publish_at: datetime | None
         problems: list[str]
-        if spaced:
-            privacy, publish_at, problems = "public", release_slot(db, channel, now), []
+        if opts.automatic and channel.allow_public:
+            # Public channels get scheduled releases, one cadence step apart, inside their windows.
+            slot = release_slot(db, channel, now)
+            privacy, publish_at = "public", slot
+            no_slot = "Ingen ledig publiceringstid hittades de närmaste två veckorna."
+            problems = [] if slot is not None else [no_slot]
+        elif opts.automatic:
+            # Without public permission the clip goes up privately right away. Nothing is released publicly,
+            # so the release cadence does not apply. The daily caps still do.
+            privacy, publish_at, problems = "private", None, []
         else:
             privacy, publish_at, problems = _resolve_timing(channel, opts, now)
         decision = check_publication(
@@ -284,7 +295,7 @@ def request_publication(
             uploads_today_channel=uploads_today(db, settings, channel.id, now),
             uploads_today_global=uploads_today(db, settings, None, now),
             # Spaced releases are paced by their release times, not by upload time.
-            last_upload_at=None if spaced else channel.last_upload_at,
+            last_upload_at=None if opts.automatic else channel.last_upload_at,
             now=now,
             file_ok=file_ok,
             min_score=channel.auto_publish_min_score,

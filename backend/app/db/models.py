@@ -320,8 +320,9 @@ class Channel(Base):
     auto_publish_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     max_uploads_per_day: Mapped[int] = mapped_column(Integer, default=1)
     min_spacing_minutes: Mapped[int] = mapped_column(Integer, default=240)
-    # Spaced release: when set, automatic clips are published privately with a release time this many
-    # minutes after the channel's latest release (made public at that time). None = upload right away.
+    # Time between automatic public releases. None = use min_spacing_minutes. Public automatic clips are
+    # scheduled this far after the channel's latest release (inside its publishing windows); clips
+    # without public permission upload privately right away.
     release_spacing_minutes: Mapped[int | None] = mapped_column(Integer)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Stockholm")
     schedule_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

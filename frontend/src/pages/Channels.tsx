@@ -10,6 +10,135 @@ import { goTo } from "../lib/nav";
 
 const DAYS = ["mån", "tis", "ons", "tor", "fre", "lör", "sön"];
 
+function BulkSettingsPanel({ onDone }: { onDone: () => void }) {
+  const toast = useToast();
+  const [releaseSpacing, setReleaseSpacing] = useState("");
+  const [minSpacing, setMinSpacing] = useState("");
+  const [perDay, setPerDay] = useState("");
+  const [visibility, setVisibility] = useState("");
+  const [auto, setAuto] = useState("");
+  const [publicOk, setPublicOk] = useState("");
+  const [phrase, setPhrase] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    // Only fields the user filled in are sent. Empty means "leave as it is".
+    const changes: Record<string, unknown> = {};
+    if (releaseSpacing) changes.release_spacing_minutes = Number(releaseSpacing);
+    if (minSpacing) changes.min_spacing_minutes = Number(minSpacing);
+    if (perDay !== "") changes.max_uploads_per_day = Number(perDay);
+    if (visibility) changes.default_visibility = visibility;
+    const body: Record<string, unknown> = { changes };
+    if (auto) body.auto_publish_enabled = auto === "on";
+    if (publicOk) {
+      body.allow_public = publicOk === "yes";
+      if (publicOk === "yes") body.confirm_phrase = phrase;
+    }
+    if (Object.keys(changes).length === 0 && !auto && !publicOk) {
+      toast("Ändra minst ett fält först.", "fail");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api<{
+        changed: string[];
+        auto_publish_not_applied: { channel_name: string; reason: string }[];
+      }>("/channels/bulk-settings", { method: "POST", body });
+      const notes = r.auto_publish_not_applied
+        .map((x) => `${x.channel_name}: ${x.reason}`)
+        .join(" ");
+      toast(`Ändrade ${r.changed.length} kanal(er).${notes ? ` ${notes}` : ""}`);
+      onDone();
+    } catch (err) {
+      toast(errorMessage(err), "fail");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} aria-label="Ändra alla kanaler">
+      <p className="small muted">
+        Fyll i bara de fält du vill ändra. Ändringen gäller alla kanaler. Antingen ändras alla eller ingen.
+      </p>
+      <div className="form-grid">
+        <label>
+          Tid mellan releaser (minuter)
+          <input
+            type="number"
+            min={30}
+            max={10080}
+            placeholder="Ingen ändring"
+            value={releaseSpacing}
+            onChange={(e) => setReleaseSpacing(e.target.value)}
+          />
+          <span className="help">Används för offentliga, schemalagda klipp.</span>
+        </label>
+        <label>
+          Minsta tid mellan uppladdningar (minuter)
+          <input
+            type="number"
+            min={10}
+            max={1440}
+            placeholder="Ingen ändring"
+            value={minSpacing}
+            onChange={(e) => setMinSpacing(e.target.value)}
+          />
+          <span className="help">Används när ingen tid mellan releaser är satt.</span>
+        </label>
+        <label>
+          Max uppladdningar per dag
+          <input
+            type="number"
+            min={0}
+            max={20}
+            placeholder="Ingen ändring"
+            value={perDay}
+            onChange={(e) => setPerDay(e.target.value)}
+          />
+        </label>
+        <label>
+          Standardsynlighet
+          <select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
+            <option value="">Ingen ändring</option>
+            <option value="private">Privat</option>
+            <option value="unlisted">Olistad</option>
+            <option value="public">Offentlig</option>
+          </select>
+        </label>
+        <label>
+          Automatisk publicering
+          <select value={auto} onChange={(e) => setAuto(e.target.value)}>
+            <option value="">Ingen ändring</option>
+            <option value="on">På (bara anslutna kanaler)</option>
+            <option value="off">Av</option>
+          </select>
+        </label>
+        <label>
+          Offentlig publicering tillåten
+          <select value={publicOk} onChange={(e) => setPublicOk(e.target.value)}>
+            <option value="">Ingen ändring</option>
+            <option value="yes">Ja</option>
+            <option value="no">Nej</option>
+          </select>
+        </label>
+      </div>
+      {publicOk === "yes" && (
+        <label>
+          Skriv OFFENTLIG PUBLICERING för att bekräfta
+          <input value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" />
+        </label>
+      )}
+      <div>
+        <button type="submit" className="primary" disabled={busy}>
+          {busy ? "Sparar…" : "Spara för alla kanaler"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ChannelForm({
   channel,
   onSaved,
@@ -176,6 +305,7 @@ export default function Channels() {
     15000,
   );
   const [editing, setEditing] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   // Google sends the browser back here with ?connected=<id> or ?oauth_error=<code>.
@@ -261,6 +391,28 @@ export default function Channels() {
           </button>
         </div>
         <p className="small muted">{t.channels.connectHelp}</p>
+      </section>
+
+      <section className="panel stack" aria-labelledby="bulk-h">
+        <div className="spread">
+          <h2 id="bulk-h">Alla kanaler</h2>
+          <button
+            className="small"
+            onClick={() => setBulkOpen(!bulkOpen)}
+            aria-expanded={bulkOpen}
+            disabled={items.length === 0}
+          >
+            {bulkOpen ? t.common.close : "Ändra alla kanaler"}
+          </button>
+        </div>
+        {bulkOpen && (
+          <BulkSettingsPanel
+            onDone={() => {
+              q.reload();
+              st.reload();
+            }}
+          />
+        )}
       </section>
 
       <section className="panel stack" aria-labelledby="auto-h">
