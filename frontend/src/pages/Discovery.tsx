@@ -125,7 +125,10 @@ function AddSource({ onDone }: { onDone: () => void }) {
 
 export default function Discovery() {
   const toast = useToast();
-  const sources = usePoll<{ items: Source[] }>(
+  const sources = usePoll<{
+    items: Source[];
+    auto_scan?: { active: boolean; reason: string | null };
+  }>(
     (s) => api("/sources", { signal: s }),
     10000,
   );
@@ -148,6 +151,9 @@ export default function Discovery() {
         <p className="muted">{t.discovery.lead}</p>
       </header>
       {sources.error && <Notice tone="fail">{sources.error}</Notice>}
+      {sources.data?.auto_scan && !sources.data.auto_scan.active && (
+        <Notice tone="fail">{sources.data.auto_scan.reason}</Notice>
+      )}
       <section className="section" aria-labelledby="src-h">
         <h2 id="src-h">Källor</h2>
         {sources.data && sources.data.items.length === 0 ? (
@@ -168,6 +174,14 @@ export default function Discovery() {
                       {s.last_checked_at
                         ? fmtRelative(s.last_checked_at)
                         : t.common.never}
+                    </span>
+                    <span>
+                      Nästa automatiska kontroll:{" "}
+                      {s.paused || !s.enabled
+                        ? "pausad"
+                        : s.next_check_at
+                          ? fmtTime(s.next_check_at)
+                          : "inom 30 sekunder"}
                     </span>
                   </div>
                   {s.last_error && (

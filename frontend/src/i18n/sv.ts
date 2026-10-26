@@ -10,6 +10,7 @@ export const sv = {
     channels: "Kanaler",
     publishing: "Publicering",
     analytics: "Analys",
+    statistics: "Statistik",
     settings: "Inställningar",
     logs: "Aktivitet",
   },

@@ -350,7 +350,7 @@ def test_inaccessible_source_awaits_media_while_the_queue_continues(
     assert c.status == CandidateStatus.AWAITING_MEDIA and c.blocked_reason == "Videon är privat."
     assert _cand(db, ok.id).status == CandidateStatus.READY
     assert not list(cfg.tmp_dir.iterdir())
-    assert w.run_once("io") is None  # parked jobs are not re-claimed
+    assert w.run_once("download") is None  # parked jobs are not re-claimed
     # The user supplies the media; processing resumes and finishes.
     with (tmp_path / "remote.mp4").open("rb") as f:
         mine = store_stream(iter(lambda: f.read(65536), b""), "min.mp4", cfg, settings)

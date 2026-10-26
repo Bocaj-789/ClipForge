@@ -179,6 +179,7 @@ class CandidateVideo(Base):
     media_path: Mapped[str | None] = mapped_column(String(1024))  # relative to data dir
     media_checksum: Mapped[str | None] = mapped_column(String(64), index=True)
     media_is_user_original: Mapped[bool] = mapped_column(Boolean, default=False)
+    media_downloaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)  # set when we download it
     blocked_reason: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_error: Mapped[str | None] = mapped_column(Text)

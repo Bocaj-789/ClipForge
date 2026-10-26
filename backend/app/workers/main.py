@@ -15,7 +15,7 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.config import Config, get_config
 from app.core.errors import ErrorCode, JobError
@@ -46,7 +46,7 @@ class Worker:
         self,
         cfg: Config,
         *,
-        lanes: tuple[str, ...] = ("heavy", "io", "light"),
+        lanes: tuple[str, ...] = ("heavy", "download", "io", "light"),
         publish_deps: PublishDeps | None = None,
     ) -> None:
         self.cfg = cfg
@@ -227,7 +227,11 @@ class Worker:
                     last_refresh = t
                 if t - last_retention > 3600:
                     with session_scope() as db:
-                        retention.sweep(db, self.cfg)
+                        retention.sweep(
+                            db,
+                            self.cfg,
+                            source_media_hours=load_settings(db).source_media_retention_hours,
+                        )
                     last_retention = t
             except Exception:
                 log.exception("maintenance loop error")
@@ -386,6 +390,13 @@ class Worker:
         with session_scope() as db:
             workspace.cleanup_orphans(db, self.cfg)
         log.info("worker %s starting; recovered %s stale jobs", self.worker_id, recovered)
+        # Downloads moved to their own lane. Move waiting downloads queued before that change too.
+        with session_scope() as db:
+            db.execute(
+                update(Job)
+                .where(Job.job_type == JobType.ACQUIRE, Job.lane != "download")
+                .values(lane="download")
+            )
         self.check_health()
         self.heartbeat()
         threads = [
@@ -394,7 +405,10 @@ class Worker:
         ]
         s = self._settings()
         for lane in self.lanes:
-            count = s.heavy_concurrency if lane == "heavy" else 1
+            count = {
+                "heavy": s.heavy_concurrency,
+                "download": s.download_concurrency,
+            }.get(lane, 1)
             for i in range(count):
                 threads.append(
                     threading.Thread(target=self.lane_loop, args=(lane,), name=f"{lane}-{i}", daemon=True)

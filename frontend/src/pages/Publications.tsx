@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import type { Paged, Publication, PublishingStatus } from "../api/types";
@@ -151,16 +151,29 @@ export function PublicationRow({
   );
 }
 
+/** An upload that is running now or about to run. Reads only local state, never YouTube. */
+function isOngoing(p: Publication): boolean {
+  return (
+    p.status === "uploading" ||
+    p.job?.status === "running" ||
+    p.job?.status === "pending"
+  );
+}
+
 export default function Publications() {
   const [filter, setFilter] = useState("");
+  const [ongoing, setOngoing] = useState(false);
   const q = usePoll<Paged<Publication> & { counts: Record<string, number> }>(
     (s) =>
       api(`/publications?limit=100${filter ? `&status=${filter}` : ""}`, {
         signal: s,
       }),
-    4000,
+    ongoing ? 2000 : 4000,
     [filter],
   );
+  useEffect(() => {
+    setOngoing(q.data?.items.some(isOngoing) ?? false);
+  }, [q.data]);
   const st = usePoll<PublishingStatus>(
     (s) => api("/publishing/status", { signal: s }),
     20000,

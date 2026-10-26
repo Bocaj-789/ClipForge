@@ -69,7 +69,7 @@ def _worker(cfg: Config, monkeypatch: pytest.MonkeyPatch, engine: FakeEngine | N
 def _drain(w: Worker, limit: int = 30) -> int:
     n = 0
     for _ in range(limit):
-        ran = [w.run_once(lane) for lane in ("light", "io", "heavy")]
+        ran = [w.run_once(lane) for lane in ("light", "download", "io", "heavy")]
         if not any(ran):
             break
         n += sum(1 for r in ran if r)

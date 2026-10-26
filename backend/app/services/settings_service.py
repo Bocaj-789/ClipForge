@@ -62,6 +62,7 @@ class AppSettings(BaseModel):
     # such videos wait for an uploaded file. Providers never bypass logins, DRM or other restrictions.
     youtube_media_provider: Literal["yt_dlp", "off"] = "yt_dlp"
     heavy_concurrency: int = Field(default=1, ge=1, le=4)
+    download_concurrency: int = Field(default=5, ge=1, le=5)
     auto_render_top_n: int = Field(default=3, ge=0, le=20)
     low_resource_mode: bool = False
 
@@ -79,6 +80,8 @@ class AppSettings(BaseModel):
     storage_warn_percent: int = Field(default=80, ge=10, le=99)
     storage_critical_percent: int = Field(default=90, ge=20, le=100)
     min_free_disk_gb: float = Field(default=5.0, ge=0.5, le=1000)
+    # Downloaded source videos are removed this many hours after download, whatever their clips' status.
+    source_media_retention_hours: int = Field(default=5, ge=1, le=720)
     temp_media_retention_days: int = Field(default=14, ge=0, le=3650)
     log_retention_days: int = Field(default=30, ge=1, le=3650)
 

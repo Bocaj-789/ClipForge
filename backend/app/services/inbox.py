@@ -195,6 +195,7 @@ def attach_media(db: Session, cand: CandidateVideo, stored: StoredMedia) -> Cand
         raise AppError(ErrorCode.CONFLICT, "Videon har redan en mediefil.", status_code=409)
     cand.media_path = stored.rel_path
     cand.media_checksum = stored.checksum
+    cand.media_is_user_original = True  # supplied by the user, so never treated as a download
     cand.duration_seconds = round(stored.info.duration, 3)
     audit.record(db, "candidate.media_attached", actor="user", object_type="candidate", object_id=cand.id)
     if rights_ok(cand.rights_status):

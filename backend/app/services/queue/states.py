@@ -39,7 +39,7 @@ LANE_FOR: dict[str, str] = {
     JobType.FETCH_METADATA: "light",
     JobType.ANALYTICS: "light",
     JobType.MAINTENANCE: "light",
-    JobType.ACQUIRE: "io",
+    JobType.ACQUIRE: "download",
     JobType.PUBLISH: "io",
     JobType.ANALYZE: "heavy",
     JobType.TRANSCRIBE: "heavy",

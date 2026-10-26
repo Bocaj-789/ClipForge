@@ -18,6 +18,7 @@ import { usePoll } from "./hooks/usePoll";
 import { t } from "./i18n/sv";
 import { setTimezone } from "./lib/format";
 import Analytics from "./pages/Analytics";
+import Statistics from "./pages/Statistics";
 import Channels from "./pages/Channels";
 import ClipDetail from "./pages/ClipDetail";
 import Clips from "./pages/Clips";
@@ -52,6 +53,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
     ["/kanaler", t.nav.channels],
     ["/publicering", t.nav.publishing],
     ["/analys", t.nav.analytics],
+    ["/statistik", t.nav.statistics],
     ["/installningar", t.nav.settings],
     ["/aktivitet", t.nav.logs],
   ];
@@ -98,6 +100,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <Route path="/kanaler" element={<Channels />} />
             <Route path="/publicering" element={<Publications />} />
             <Route path="/analys" element={<Analytics />} />
+            <Route path="/statistik" element={<Statistics />} />
             <Route path="/installningar" element={<Settings />} />
             <Route path="/aktivitet" element={<Logs />} />
             <Route path="*" element={<Navigate to="/" replace />} />

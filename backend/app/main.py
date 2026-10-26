@@ -15,7 +15,19 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import auth as auth_routes
-from app.api.routes import channels, clips, inbox, jobs, logs, oauth, publishing, settings, sources, system
+from app.api.routes import (
+    channels,
+    clips,
+    inbox,
+    jobs,
+    logs,
+    oauth,
+    publishing,
+    settings,
+    sources,
+    stats,
+    system,
+)
 from app.config import REPO_ROOT, Config, get_config
 from app.core import auth
 from app.core.errors import AppError, ErrorCode
@@ -142,6 +154,7 @@ def create_app(
         publishing.router,
         settings.router,
         logs.router,
+        stats.router,
     ):
         api.include_router(r)
     app.include_router(api)

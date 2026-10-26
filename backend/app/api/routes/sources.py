@@ -17,6 +17,7 @@ from app.services.audit import service as audit
 from app.services.discovery.cc_finder import CcSearchConfig
 from app.services.queue import service as q
 from app.services.queue.states import Priority
+from app.services.settings_service import load_settings
 from app.services.urls import UrlKind, UrlRejected, classify_url
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -101,7 +102,20 @@ def list_sources(_: Principal = Depends(require_user), db: Session = Depends(get
     counts = dict(
         db.execute(select(CandidateVideo.source_id, func.count()).group_by(CandidateVideo.source_id)).all()
     )
-    return {"items": [{**ser.source(s), "candidates": counts.get(s.id, 0)} for s in rows]}
+    s = load_settings(db)
+    if not s.discovery_enabled:
+        reason: str | None = "Automatisk upptäckt är avstängd. Slå på den i Inställningar."
+    elif s.max_discoveries_per_day <= 0:
+        reason = (
+            "Max kontroller av källor per dygn är 0, så källor kontrolleras inte automatiskt. "
+            "Höj värdet i Inställningar."
+        )
+    else:
+        reason = None
+    return {
+        "items": [{**ser.source(src), "candidates": counts.get(src.id, 0)} for src in rows],
+        "auto_scan": {"active": reason is None, "reason": reason},
+    }
 
 
 @router.post("")

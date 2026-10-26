@@ -65,6 +65,12 @@ const GROUPS: [string, Field[]][] = [
         help: "1 rekommenderas på en M1 med 16 GB. Kräver omstart av arbetaren.",
       },
       {
+        key: "download_concurrency",
+        label: "Nedladdningar samtidigt",
+        kind: "int",
+        help: "Hur många videor som hämtas parallellt (1 till 5). Kräver omstart av arbetaren.",
+      },
+      {
         key: "low_resource_mode",
         label: "Lågresursläge",
         kind: "bool",
@@ -185,6 +191,11 @@ const GROUPS: [string, Field[]][] = [
         key: "min_free_disk_gb",
         label: "Minsta lediga diskutrymme (GB)",
         kind: "float",
+      },
+      {
+        key: "source_media_retention_hours",
+        label: "Ta bort nedladdade videor efter (timmar)",
+        kind: "int",
       },
       { key: "timezone", label: "Tidszon", kind: "text" },
     ],

@@ -308,6 +308,7 @@ def handle_acquire(ctx: JobContext) -> dict[str, Any]:
     if got.title and not cand.title:
         cand.title = got.title
     cand.media_path = str(final.relative_to(ctx.cfg.data_dir))
+    cand.media_downloaded_at = utcnow()
     cand.media_checksum = sha256_path(final)
     cand.duration_seconds = round(info.duration, 3)
     cand.blocked_reason = None
