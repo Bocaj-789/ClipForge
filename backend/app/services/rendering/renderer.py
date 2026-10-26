@@ -15,6 +15,7 @@ from app.services.rendering import captions as cap
 from app.services.rendering.crop import video_filter
 from app.services.rendering.ffmpeg import MediaInfo, ffmpeg_version, probe, run_ffmpeg
 from app.services.rendering.profiles import get_profile
+from app.services.rendering.tracking import subject_keyframes
 
 
 @dataclass
@@ -56,11 +57,16 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_args(req: RenderRequest, caption_list: Path | None, part: Path) -> list[str]:
+def build_args(
+    req: RenderRequest,
+    caption_list: Path | None,
+    part: Path,
+    track: list[tuple[float, float]] | None = None,
+) -> list[str]:
     prof = get_profile(req.profile)
     dur = req.end - req.start
     args = ["-ss", f"{req.start:.3f}", "-t", f"{dur:.3f}", "-i", str(req.source)]
-    graph = video_filter(req.crop_mode, prof.width, prof.height, prof.fps, req.crop_offset)
+    graph = video_filter(req.crop_mode, prof.width, prof.height, prof.fps, req.crop_offset, track)
     if caption_list is not None:
         args += ["-f", "concat", "-i", str(caption_list)]
         band_y = int(prof.height * 0.58)
@@ -113,12 +119,17 @@ def render_clip(
         crop_h = min(disp[1], disp[0] * 16 / 9)
         if crop_h < prof.height * 0.5:
             warnings.append("Källan har låg upplösning; beskärningen skalas upp kraftigt.")
+    # Landscape sources without a manual offset follow the talking person; the crop stays centred
+    # on the frame only when no face can be found.
+    track = None
     if (
         req.crop_offset is None
         and req.crop_mode == "center_crop"
         and req.source_info.orientation == "landscape"
     ):
-        warnings.append("Centrerad beskärning utan motivspårning – kontrollera att talaren syns.")
+        track = subject_keyframes(req.source, req.source_info, req.start, dur)
+        if track is None:
+            warnings.append("Inget ansikte hittades – klippet är centrerat utan motivspårning.")
 
     req.work_dir.mkdir(parents=True, exist_ok=True)
     caption_list = None
@@ -141,7 +152,7 @@ def render_clip(
 
     part = req.work_dir / "render.part.mp4"
     run_ffmpeg(
-        build_args(req, caption_list, part),
+        build_args(req, caption_list, part, track),
         expected_duration=dur,
         on_progress=on_progress,
         should_cancel=should_cancel,

@@ -31,11 +31,22 @@ def hashtag(word: str) -> str | None:
     return f"#{w}" if 2 <= len(w) <= 30 else None
 
 
-def suggest_title(excerpt: str) -> str:
-    first = re.split(r"(?<=[.!?…])\s+", excerpt.strip(), maxsplit=1)[0]
-    if len(first) < 12 and len(excerpt) > len(first):
-        first = excerpt[:80]
-    return sanitize_title(first) or "Klipp"
+def suggest_title(excerpt: str, keywords: list[str] | None = None) -> str:
+    """Fallback title without an LLM: the clip sentence with the most keyword hits, not the first one."""
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", excerpt.strip()) if s.strip()]
+    if not sentences:
+        return "Klipp"
+    kws = {k.lower() for k in (keywords or []) if k}
+
+    def rank(s: str) -> tuple[int, int, int]:
+        hits = sum(1 for k in kws if k in s.lower())
+        in_range = 1 if 30 <= len(s) <= 90 else 0
+        return hits, in_range, -abs(len(s) - 60)
+
+    best = max(sentences, key=rank)
+    if len(best) < 12:
+        best = excerpt.strip()[:80]
+    return sanitize_title(best) or "Klipp"
 
 
 def suggest_hashtags(keywords: list[str], category: str | None) -> list[str]:

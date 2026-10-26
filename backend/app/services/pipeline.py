@@ -47,7 +47,12 @@ from app.services.acquisition.provider import (
 from app.services.audit import service as audit
 from app.services.discovery.base import DiscoveryResult
 from app.services.intelligence.candidate_extractor import sentences_from_segments, validate_range
-from app.services.intelligence.llm_provider import ClipProvider, HeuristicProvider, OllamaProvider
+from app.services.intelligence.llm_provider import (
+    ClipProvider,
+    HeuristicProvider,
+    OllamaProvider,
+    sample_transcript,
+)
 from app.services.intelligence.metadata import suggest_description, suggest_hashtags, suggest_title
 from app.services.publishing import quota
 from app.services.publishing import service as publishing
@@ -446,6 +451,14 @@ def handle_extract_clips(ctx: JobContext) -> dict[str, Any]:
             keywords=keywords,
             limit=limit,
         )
+    if isinstance(provider, OllamaProvider) and any(w.title is None for w in wins):
+        # The model reads the whole video (sampled) plus the clip, so titles are not just its first words.
+        video_text = sample_transcript(sentences)
+        for w in wins:
+            if w.title is None:
+                w.title = provider.write_title(
+                    video_title=cand.title or "", video_text=video_text, clip_text=w.excerpt
+                )
     # Replace earlier un-rendered proposals on reprocess; keep anything already rendered.
     for old in ctx.db.scalars(
         select(ClipCandidate).where(
@@ -480,7 +493,7 @@ def handle_extract_clips(ctx: JobContext) -> dict[str, Any]:
             warnings_json=sc.warnings,
             provider=w.provider,
             transcript_excerpt=w.excerpt,
-            title_suggestion=w.title or suggest_title(w.excerpt),
+            title_suggestion=w.title or suggest_title(w.excerpt, keywords),
             status=ClipStatus.PROPOSED,
         )
         ctx.db.add(clip)

@@ -329,3 +329,52 @@ def delete_candidate(
         details={"files_removed": removed},
     )
     return {"ok": True, "files_removed": removed}
+
+
+DISCOVERY_CLEARABLE = [
+    CandidateStatus.DISCOVERED,
+    CandidateStatus.QUEUED,
+    CandidateStatus.AWAITING_MEDIA,
+    CandidateStatus.BLOCKED,
+    CandidateStatus.SKIPPED,
+]
+
+
+@router.post("/candidates/clear-discovered")
+def clear_discovered(
+    request: Request, _: Principal = Depends(require_user), db: Session = Depends(get_db)
+) -> dict:
+    """Delete discovered videos that never reached analysis. Their waiting jobs go with them (cascade).
+
+    Kept: videos that already have a transcript or clip proposals, and videos with a job running right now.
+    Manually added videos and publishing are not affected.
+    """
+    cfg = request.app.state.cfg
+    rows = db.scalars(
+        select(CandidateVideo).where(
+            CandidateVideo.origin == "discovery", CandidateVideo.status.in_(DISCOVERY_CLEARABLE)
+        )
+    ).all()
+    removed = kept = 0
+    for c in rows:
+        running = db.scalar(select(Job.id).where(Job.candidate_video_id == c.id, Job.status == "running"))
+        analysed = db.scalar(select(Transcript.id).where(Transcript.candidate_video_id == c.id))
+        if c.clips or analysed or running:
+            kept += 1
+            continue
+        if c.media_path and not c.media_is_user_original:
+            path = contained_path(cfg.data_dir, c.media_path)
+            if path.is_file():
+                path.unlink()
+        db.delete(c)
+        removed += 1
+    db.flush()
+    invalidate_cache()
+    audit.record(
+        db,
+        "candidate.discovery_cleared",
+        actor="user",
+        object_type="candidate",
+        details={"removed": removed, "kept": kept},
+    )
+    return {"removed": removed, "kept": kept}

@@ -206,7 +206,27 @@ export default function Discovery() {
       </section>
       <AddSource onDone={sources.reload} />
       <section className="section" aria-labelledby="found-h">
-        <h2 id="found-h">Senast upptäckta</h2>
+        <div className="spread">
+          <h2 id="found-h">Senast upptäckta</h2>
+          <ConfirmButton
+            className="small ghost"
+            message="Ta bort de upptäckta videor som inte har börjat analyseras? Köade jobb för dem avbryts. Redan analyserade videor finns kvar."
+            onConfirm={async () => {
+              try {
+                const r = await api<{ removed: number; kept: number }>("/candidates/clear-discovered", {
+                  method: "POST",
+                });
+                toast(`${r.removed} borttagna, ${r.kept} behållna.`);
+                found.reload();
+                sources.reload();
+              } catch (e) {
+                toast(errorMessage(e), "fail");
+              }
+            }}
+          >
+            Rensa senast upptäckta
+          </ConfirmButton>
+        </div>
         {found.data && found.data.items.length === 0 ? (
           <Empty>Inget upptäckt ännu.</Empty>
         ) : (

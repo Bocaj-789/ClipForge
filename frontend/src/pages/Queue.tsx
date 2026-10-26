@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
 import type { Job, Paged } from "../api/types";
-import { Empty, JobPill, Notice, Progress, useToast } from "../components/ui";
+import { ConfirmButton, Empty, JobPill, Notice, Progress, useToast } from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
 import { t } from "../i18n/sv";
 import { fmtRelative, fmtTime } from "../lib/format";
@@ -70,6 +70,23 @@ export default function Queue() {
             ))}
           </select>
         </label>
+      </div>
+      <div className="row">
+        <ConfirmButton
+          className="small ghost"
+          message="Avbryt alla väntande och pågående intagsjobb? Publiceringar påverkas inte. Avbrutna jobb kan köras om."
+          onConfirm={async () => {
+            try {
+              const r = await api<{ cancelled: number }>("/jobs/clear-queue", { method: "POST" });
+              toast(`${r.cancelled} jobb avbröts.`);
+              q.reload();
+            } catch (e) {
+              toast(errorMessage(e), "fail");
+            }
+          }}
+        >
+          Rensa kön
+        </ConfirmButton>
       </div>
       {q.error && <Notice tone="fail">{q.error}</Notice>}
       {q.data && q.data.items.length === 0 ? (

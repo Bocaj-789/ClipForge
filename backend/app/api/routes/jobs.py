@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import Principal, get_db, require_user
 from app.core.errors import AppError, ErrorCode, NotFound
-from app.db.models import Job, JobStatus
+from app.db.models import Job, JobStatus, JobType
 from app.schemas import serializers as ser
 from app.services.audit import service as audit
 from app.services.publishing import service as publishing
@@ -68,6 +68,21 @@ def retry(job_id: str, _: Principal = Depends(require_user), db: Session = Depen
     publishing.sync_job_change(db, j)
     audit.record(db, "job.retry", actor="user", object_type="job", object_id=job_id)
     return ser.job(j)
+
+
+CLEARABLE_JOB_STATES = ["pending", "retry_wait", "blocked", "awaiting_media", "running"]
+
+
+@router.post("/clear-queue")
+def clear_queue(_: Principal = Depends(require_user), db: Session = Depends(get_db)) -> dict:
+    """Cancel waiting and running intake jobs. Publishing is never touched. Cancelled jobs can be retried."""
+    rows = db.scalars(
+        select(Job).where(Job.job_type != JobType.PUBLISH, Job.status.in_(CLEARABLE_JOB_STATES))
+    ).all()
+    for j in rows:
+        q.request_cancel(db, j.id)
+    audit.record(db, "queue.cleared", actor="user", object_type="job", details={"count": len(rows)})
+    return {"cancelled": len(rows)}
 
 
 @router.post("/{job_id}/cancel")
