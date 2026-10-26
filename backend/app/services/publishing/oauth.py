@@ -199,12 +199,18 @@ def complete(
 
         existing = db.scalar(select(Channel).where(Channel.external_channel_id == info.channel_id))
         target = db.get(Channel, row.channel_id) if row.channel_id else None
-        if existing is not None and target is not None and existing.id != target.id:
-            revoke_token(http, tr.refresh_token)
-            raise OAuthFlowError(
-                "channel_in_use",
-                f'YouTube-kanalen "{info.title}" är redan ansluten som "{existing.display_name}".',
-            )
+        if existing is not None and (target is None or existing.id != target.id):
+            if not _binding_is_stale(deps, existing):
+                revoke_token(http, tr.refresh_token)
+                raise OAuthFlowError(
+                    "channel_in_use",
+                    f'YouTube-kanalen "{info.title}" är redan ansluten som "{existing.display_name}".',
+                )
+            # The other row still points at this YouTube channel, but its token can't be used on this
+            # machine (for example a Keychain token copied from a Mac, or a disconnected row). Release
+            # that link so the channel can be connected here. Upload history stays on that row.
+            _release_binding(db, existing)
+            db.flush()
         if (
             target is not None
             and target.external_channel_id
@@ -311,4 +317,42 @@ def mark_needs_reauth(db: Session, channel: Channel, message: str) -> None:
         object_id=channel.id,
         severity="warning",
         details={"reason": message[:200]},
+    )
+
+
+def _binding_is_stale(deps: PublishDeps, ch: Channel) -> bool:
+    """True when a row's YouTube link can't be used with this machine's secret store.
+
+    Covers disconnected rows (no token), tokens saved by another store (for example a Keychain
+    reference copied to a Linux VM) and missing tokens. A store that is temporarily unavailable keeps
+    the binding, so a locked Keychain never unlinks a working channel.
+    """
+    ref = ch.token_reference
+    if not ref:
+        return True
+    if ref.partition(":")[0] != deps.store.name:
+        return True
+    try:
+        return load_refresh_token(deps.store.get(ref)) is None
+    except SecretStoreError:
+        return False
+
+
+def _release_binding(db: Session, ch: Channel) -> None:
+    """Unlink a stale row from its YouTube channel. The row and its upload history are kept."""
+    ch.external_channel_id = None
+    ch.token_reference = None
+    ch.connection_state = ConnectionState.DISCONNECTED
+    ch.connection_error = None
+    ch.oauth_connected_at = None
+    ch.granted_scopes_json = []
+    ch.auto_publish_enabled = False
+    audit.record(
+        db,
+        "channel.binding_released",
+        actor="user",
+        object_type="channel",
+        object_id=ch.id,
+        details={"reason": "stale_token"},
+        severity="warning",
     )
