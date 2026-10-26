@@ -39,6 +39,8 @@ from app.services.storage.manager import cleanup_stale_temp, storage_status
 
 log = logging.getLogger("clipforge.worker")
 FAIRNESS_EVERY = 5
+# Lanes that share the max_concurrent_jobs limit. Other lanes keep their own single thread.
+CAPPED_LANES = frozenset({"download", "heavy"})
 
 
 class Worker:
@@ -59,6 +61,7 @@ class Worker:
         self.degraded: dict[str, str] = {}
         self._claims: dict[str, int] = {}
         self._lock = threading.Lock()
+        self._slots: threading.BoundedSemaphore | None = None  # set in start() from max_concurrent_jobs
 
     # --------------------------------------------------------- factories
     def discovery_factory(self, src: Source) -> Any:
@@ -243,14 +246,28 @@ class Worker:
             ctl = agent.get_control(db)
             return ctl.desired_state == "running" and not ctl.maintenance_mode
 
+    def _take_slot(self) -> bool:
+        """Wait for one of the shared job slots. Returns False once shutdown has been requested."""
+        assert self._slots is not None
+        while not self.shutdown.is_set():
+            if self._slots.acquire(timeout=1):
+                return True
+        return False
+
     def lane_loop(self, lane: str) -> None:
         idle = 1.0
+        capped = lane in CAPPED_LANES
         while not self.shutdown.is_set():
+            if capped and not self._take_slot():
+                break
             try:
                 job = self.run_once(lane)
             except Exception:
                 log.exception("lane %s crashed; continuing", lane)
                 job = None
+            finally:
+                if capped and self._slots is not None:
+                    self._slots.release()
             if job:
                 idle = 0.2
             else:
@@ -404,6 +421,7 @@ class Worker:
             threading.Thread(target=self.lease_loop, name="lease", daemon=True),
         ]
         s = self._settings()
+        self._slots = threading.BoundedSemaphore(s.max_concurrent_jobs)
         for lane in self.lanes:
             count = {
                 "heavy": s.heavy_concurrency,

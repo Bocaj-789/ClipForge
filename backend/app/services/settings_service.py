@@ -63,6 +63,8 @@ class AppSettings(BaseModel):
     youtube_media_provider: Literal["yt_dlp", "off"] = "yt_dlp"
     heavy_concurrency: int = Field(default=1, ge=1, le=4)
     download_concurrency: int = Field(default=5, ge=1, le=5)
+    # Shared limit on downloads and heavy jobs running at the same time. Default matches 5 + 1 lanes.
+    max_concurrent_jobs: int = Field(default=6, ge=1, le=9)
     auto_render_top_n: int = Field(default=3, ge=0, le=20)
     low_resource_mode: bool = False
 

@@ -71,6 +71,12 @@ const GROUPS: [string, Field[]][] = [
         help: "Hur många videor som hämtas parallellt (1 till 5). Kräver omstart av arbetaren.",
       },
       {
+        key: "max_concurrent_jobs",
+        label: "Jobb samtidigt totalt",
+        kind: "int",
+        help: "Övre gräns för nedladdningar och tunga jobb tillsammans (1 till 9). Gäller över båda inställningarna ovan. Kräver omstart av arbetaren.",
+      },
+      {
         key: "low_resource_mode",
         label: "Lågresursläge",
         kind: "bool",
