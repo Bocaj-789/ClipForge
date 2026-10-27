@@ -19,6 +19,7 @@ What it deliberately does not do:
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -93,6 +94,15 @@ def build_options(
         "overwrites": True,
         "progress_hooks": [progress_hook] if progress_hook else [],
     }
+    cookies_file = os.environ.get("CLIPFORGE_YOUTUBE_COOKIES_FILE", "").strip()
+    if cookies_file:
+        cookie_path = Path(cookies_file).expanduser()
+        if not cookie_path.is_file():
+            raise ValueError(
+                "CLIPFORGE_YOUTUBE_COOKIES_FILE pekar inte på en befintlig fil."
+            )
+        opts["cookiefile"] = str(cookie_path)
+
     if ffmpeg_location:
         opts["ffmpeg_location"] = ffmpeg_location
     if runtime:

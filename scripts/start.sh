@@ -3,6 +3,16 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+# Optional private runtime configuration; kept outside the repository.
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/clipforge/clipforge.env"
+if [[ -f "$CONFIG_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$CONFIG_FILE"
+  set +a
+fi
+
 DATA="${CLIPFORGE_DATA_DIR:-$ROOT/data}"
 RUN="$DATA/run"
 PY="$ROOT/.venv/bin/python"
