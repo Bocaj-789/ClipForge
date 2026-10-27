@@ -113,7 +113,8 @@ class FasterWhisperEngine:
                 log.info("downloading whisper model %s (user-approved)", self.model)
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
                 path = str(download_model(self.model, cache_dir=str(self.cache_dir)))
-            threads = 2 if self.low_resource else max(2, min(6, (os.cpu_count() or 4) - 2))
+            # Leave one core for ffmpeg and the other lanes. 2 vCPU -> 2 threads, 4 vCPU -> 3.
+            threads = 2 if self.low_resource else max(2, min(6, (os.cpu_count() or 4) - 1))
             # Keep only one model resident to bound RAM.
             _loaded.clear()
             _loaded[key] = WhisperModel(path, device="cpu", compute_type="int8", cpu_threads=threads)
