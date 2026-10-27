@@ -69,7 +69,7 @@ def _worker(cfg: Config, monkeypatch: pytest.MonkeyPatch, engine: FakeEngine | N
 def _drain(w: Worker, limit: int = 30) -> int:
     n = 0
     for _ in range(limit):
-        ran = [w.run_once(lane) for lane in ("light", "download", "io", "heavy")]
+        ran = [w.run_once(lane) for lane in ("light", "download", "io", "heavy", "transcribe")]
         if not any(ran):
             break
         n += sum(1 for r in ran if r)
@@ -149,7 +149,7 @@ def test_critical_storage_skips_disk_heavy_jobs(
     w = _worker(cfg, monkeypatch)
     w.run_once("heavy")  # analyze (not disk heavy)
     w.degraded["storage"] = "full"
-    assert w.run_once("heavy") is None  # transcribe is disk heavy -> not claimed
+    assert w.run_once("transcribe") is None  # transcribe is disk heavy -> not claimed
     db.expire_all()
     tj = db.scalar(select(Job).where(Job.candidate_video_id == cand.id, Job.job_type == "transcribe"))
     assert tj.status == JobStatus.PENDING
@@ -172,8 +172,8 @@ def test_render_failure_is_retried_then_fails_safely(
 ) -> None:
     cand = _import(db, cfg, make_video(tmp_path / "src.mp4", seconds=30))
     w = _worker(cfg, monkeypatch)
-    for _ in range(3):
-        w.run_once("heavy")  # analyze, transcribe, extract
+    for lane in ("heavy", "transcribe", "heavy"):
+        w.run_once(lane)  # analyze, transcribe, extract
     from app.core.errors import ErrorCode, transient
 
     def boom(*a, **k):
@@ -191,8 +191,8 @@ def test_render_failure_is_retried_then_fails_safely(
 def test_cancel_running_render(cfg: Config, db: Session, monkeypatch, tmp_path: Path) -> None:
     cand = _import(db, cfg, make_video(tmp_path / "src.mp4", seconds=30))
     w = _worker(cfg, monkeypatch)
-    for _ in range(3):
-        w.run_once("heavy")
+    for lane in ("heavy", "transcribe", "heavy"):
+        w.run_once(lane)  # analyze, transcribe, extract
     real = pipeline.render_clip
 
     def cancelling(req, on_progress=None, should_cancel=None):

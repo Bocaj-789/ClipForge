@@ -48,7 +48,7 @@ class Worker:
         self,
         cfg: Config,
         *,
-        lanes: tuple[str, ...] = ("heavy", "download", "io", "light"),
+        lanes: tuple[str, ...] = ("heavy", "transcribe", "download", "io", "light"),
         publish_deps: PublishDeps | None = None,
     ) -> None:
         self.cfg = cfg
@@ -413,6 +413,12 @@ class Worker:
                 update(Job)
                 .where(Job.job_type == JobType.ACQUIRE, Job.lane != "download")
                 .values(lane="download")
+            )
+            # Transcription got its own lane. Move waiting transcribe jobs that were queued in heavy.
+            db.execute(
+                update(Job)
+                .where(Job.job_type == JobType.TRANSCRIBE, Job.lane != "transcribe")
+                .values(lane="transcribe")
             )
         self.check_health()
         self.heartbeat()

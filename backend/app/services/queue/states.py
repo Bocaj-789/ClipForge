@@ -42,7 +42,8 @@ LANE_FOR: dict[str, str] = {
     JobType.ACQUIRE: "download",
     JobType.PUBLISH: "io",
     JobType.ANALYZE: "heavy",
-    JobType.TRANSCRIBE: "heavy",
+    # Transcription uses several CPU threads itself, so it gets one job at a time on its own lane.
+    JobType.TRANSCRIBE: "transcribe",
     JobType.EXTRACT_CLIPS: "heavy",
     JobType.RENDER: "heavy",
 }

@@ -16,7 +16,7 @@ export default function Videos() {
   const [origin, setOrigin] = useState("");
   const toast = useToast();
   const videos = usePoll<Paged<Candidate>>(
-    (s) => api(`/candidates?limit=100${origin ? `&origin=${origin}` : ""}`, { signal: s }),
+    (s) => api(`/candidates?limit=100&unpublished=true${origin ? `&origin=${origin}` : ""}`, { signal: s }),
     0,
     [origin],
   );
@@ -39,8 +39,8 @@ export default function Videos() {
       <header className="page-head">
         <h1>Videor</h1>
         <p className="muted">
-          Alla videor ClipForge har fått in. Ta bort de du inte vill ha kvar. Videor som redan är uppladdade till
-          YouTube kan inte tas bort här.
+          Videor som ännu inte är publicerade eller schemalagda. Ta bort de du inte vill ha kvar. Publicerade videor
+          visas inte här.
         </p>
       </header>
 

@@ -165,10 +165,16 @@ async def upload(
         db.close()
 
 
+# Publication upload states that mean a video is already on YouTube, queued or waiting to be scheduled.
+# "failed" and "cancelled" are left out on purpose: those videos have not been published.
+_PUBLISHED_OR_SCHEDULED = ["queued", "uploading", "uploaded", "blocked"]
+
+
 @router.get("/candidates")
 def list_candidates(
     status: str | None = Query(default=None, max_length=32),
     origin: Literal["manual", "discovery", "all"] = "all",
+    unpublished: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     _: Principal = Depends(require_user),
@@ -181,6 +187,14 @@ def list_candidates(
         stmt = stmt.where(CandidateVideo.origin.in_(["manual_url", "local_upload"]))
     elif origin == "discovery":
         stmt = stmt.where(CandidateVideo.origin == "discovery")
+    if unpublished:
+        published_or_scheduled = (
+            select(ClipCandidate.candidate_video_id)
+            .join(RenderedClip, RenderedClip.clip_candidate_id == ClipCandidate.id)
+            .join(Publication, Publication.rendered_clip_id == RenderedClip.id)
+            .where(Publication.status.in_(_PUBLISHED_OR_SCHEDULED))
+        )
+        stmt = stmt.where(CandidateVideo.id.not_in(published_or_scheduled))
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
         stmt.order_by(CandidateVideo.priority.asc(), CandidateVideo.discovered_at.desc())
