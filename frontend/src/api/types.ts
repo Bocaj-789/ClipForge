@@ -117,6 +117,19 @@ export interface Storage {
   breakdown: Record<string, number>;
 }
 
+export interface ServerMetrics {
+  cpu: { percent: number; cores: number; load_average: number[] | null };
+  memory: { percent: number; used_bytes: number; total_bytes: number };
+  swap: { percent: number; used_bytes: number; total_bytes: number };
+  network: {
+    sent_bytes_per_s: number;
+    recv_bytes_per_s: number;
+    sent_total_bytes: number;
+    recv_total_bytes: number;
+  };
+  uptime_seconds: number;
+}
+
 export interface Summary {
   agent: AgentStatus;
   jobs: Record<string, number>;
@@ -125,6 +138,7 @@ export interface Summary {
   candidates_total: number;
   recent_errors: Job[];
   storage: Storage;
+  server: ServerMetrics;
   transcription: {
     available: boolean;
     reason: string | null;

@@ -40,6 +40,16 @@ export function fmtBytes(n: number | null | undefined): string {
   return `${v.toLocaleString("sv-SE", { maximumFractionDigits: v < 10 && i > 0 ? 1 : 0 })} ${units[i]}`;
 }
 
+export function fmtUptime(seconds: number | null | undefined): string {
+  if (seconds == null) return "–";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days} d ${hours} h`;
+  if (hours) return `${hours} h ${minutes} min`;
+  return `${minutes} min`;
+}
+
 export function fmtDuration(s: number | null | undefined): string {
   if (s == null) return "–";
   const total = Math.round(s);

@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../api/client";
-import type { AgentStatus, Job, Paged, Summary } from "../api/types";
+import type { AgentStatus, Job, Paged, ServerMetrics, Summary } from "../api/types";
 import { ConfirmButton, Empty, JobPill, Notice, useToast } from "../components/ui";
 import { usePoll } from "../hooks/usePoll";
 import { t } from "../i18n/sv";
-import { fmtBytes, fmtRelative } from "../lib/format";
+import { fmtBytes, fmtRelative, fmtUptime } from "../lib/format";
 
 // The pipeline is a real sequence, so it is shown as one. Colour follows the temper scale.
 const STAGES: { type: string; heat: string }[] = [
@@ -14,6 +14,85 @@ const STAGES: { type: string; heat: string }[] = [
   { type: "extract_clips", heat: "var(--bronze)" },
   { type: "render", heat: "var(--purple)" },
 ];
+
+// Same thresholds as the storage meter: amber from 75 %, red from 90 %.
+const levelFor = (percent: number) => (percent >= 90 ? "critical" : percent >= 75 ? "warn" : "ok");
+
+const pct = (v: number) => `${v.toLocaleString("sv-SE", { maximumFractionDigits: 1 })} %`;
+
+function ServerPanel({ m }: { m: ServerMetrics }) {
+  return (
+    <section className="panel" aria-labelledby="server">
+      <div className="spread">
+        <h2 id="server">{t.overview.server}</h2>
+        <span className="small muted">{t.overview.serverHelp}</span>
+      </div>
+      <dl className="facts">
+        <dt>{t.overview.cpu}</dt>
+        <dd>
+          <div className="stack" style={{ gap: "0.35rem" }}>
+            <span className="num">
+              {pct(m.cpu.percent)} · {m.cpu.cores} {t.overview.cores}
+            </span>
+            <div className="meter" data-level={levelFor(m.cpu.percent)}>
+              <span style={{ width: `${Math.min(100, m.cpu.percent)}%` }} />
+            </div>
+            {m.cpu.load_average && (
+              <span className="small muted">
+                {t.overview.load}: {m.cpu.load_average.map((v) => v.toLocaleString("sv-SE")).join(" / ")}
+              </span>
+            )}
+          </div>
+        </dd>
+
+        <dt>{t.overview.memory}</dt>
+        <dd>
+          <div className="stack" style={{ gap: "0.35rem" }}>
+            <span className="num">
+              {fmtBytes(m.memory.used_bytes)} av {fmtBytes(m.memory.total_bytes)} ({pct(m.memory.percent)})
+            </span>
+            <div className="meter" data-level={levelFor(m.memory.percent)}>
+              <span style={{ width: `${Math.min(100, m.memory.percent)}%` }} />
+            </div>
+          </div>
+        </dd>
+
+        <dt>{t.overview.swap}</dt>
+        <dd>
+          {m.swap.total_bytes > 0 ? (
+            <div className="stack" style={{ gap: "0.35rem" }}>
+              <span className="num">
+                {fmtBytes(m.swap.used_bytes)} av {fmtBytes(m.swap.total_bytes)} ({pct(m.swap.percent)})
+              </span>
+              <div className="meter" data-level={levelFor(m.swap.percent)}>
+                <span style={{ width: `${Math.min(100, m.swap.percent)}%` }} />
+              </div>
+            </div>
+          ) : (
+            "–"
+          )}
+        </dd>
+
+        <dt>{t.overview.network}</dt>
+        <dd>
+          <div className="stack" style={{ gap: "0.2rem" }}>
+            <span className="num">
+              {t.overview.sent} {fmtBytes(m.network.sent_bytes_per_s)}/s · {t.overview.recv}{" "}
+              {fmtBytes(m.network.recv_bytes_per_s)}/s
+            </span>
+            <span className="small muted">
+              {t.overview.totalSent} {fmtBytes(m.network.sent_total_bytes)} · {t.overview.totalRecv}{" "}
+              {fmtBytes(m.network.recv_total_bytes)}
+            </span>
+          </div>
+        </dd>
+
+        <dt>{t.overview.uptime}</dt>
+        <dd>{fmtUptime(m.uptime_seconds)}</dd>
+      </dl>
+    </section>
+  );
+}
 
 export function AgentControls({ agent, onChange }: { agent: AgentStatus; onChange: () => void }) {
   const toast = useToast();
@@ -111,6 +190,8 @@ export default function Overview() {
           </li>
         </ol>
       </section>
+
+      {s.server && <ServerPanel m={s.server} />}
 
       <div className="grid-2">
         <section className="panel" aria-labelledby="problems">

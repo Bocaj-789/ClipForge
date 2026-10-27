@@ -25,7 +25,7 @@ from app.db.models import (
     Source,
 )
 from app.schemas import serializers as ser
-from app.services import agent
+from app.services import agent, server_metrics
 from app.services.intelligence.llm_provider import OllamaProvider
 from app.services.pipeline import default_engine, default_providers
 from app.services.rendering import ffmpeg
@@ -156,6 +156,7 @@ def summary(request: Request, _: Principal = Depends(require_user), db: Session 
         "candidates_total": db.scalar(select(func.count()).select_from(CandidateVideo)) or 0,
         "recent_errors": [ser.job(j) for j in errors],
         "storage": storage_status(cfg.data_dir, s).as_dict(),
+        "server": server_metrics.snapshot(),
         "transcription": tr,
         "llm_provider": s.llm_provider,
         "sources": [
