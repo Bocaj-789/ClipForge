@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import select
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +19,8 @@ from app.config import get_config
 from app.core.errors import ErrorCode, JobError, permanent
 
 log = logging.getLogger("clipforge.ffmpeg")
+
+CHECK_INTERVAL = 0.5  # seconds between cancel/timeout checks while ffmpeg runs
 
 
 @dataclass(frozen=True)
@@ -163,6 +167,22 @@ class Cancelled(Exception):
     pass
 
 
+def _report_progress(
+    raw: bytes, expected_duration: float | None, on_progress: Callable[[float], None] | None
+) -> None:
+    """Parse one line of ffmpeg's ``-progress pipe:1`` output."""
+    if not expected_duration or not on_progress:
+        return
+    line = raw.decode(errors="replace").strip()
+    if not line.startswith("out_time_us="):
+        return
+    try:
+        us = int(line.split("=", 1)[1])
+    except ValueError:
+        return
+    on_progress(min(99.0, 100.0 * us / 1e6 / expected_duration))
+
+
 def run_ffmpeg(
     args: Sequence[str],
     *,
@@ -171,7 +191,11 @@ def run_ffmpeg(
     should_cancel: Callable[[], bool] | None = None,
     timeout: float = 3 * 3600,
 ) -> None:
-    """Run ffmpeg with progress reporting and cooperative cancellation."""
+    """Run ffmpeg with progress reporting and cooperative cancellation.
+
+    Cancellation and the timeout are checked on a timer, not only when ffmpeg prints progress,
+    so a stalled ffmpeg that stops writing output still gets cancelled and killed.
+    """
     _ensure()
     cmd = [ffmpeg_bin(), "-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats", *args]
     with tempfile.TemporaryFile(mode="w+b") as errf:
@@ -179,25 +203,31 @@ def run_ffmpeg(
         start = time.monotonic()
         last_check = 0.0
         assert proc.stdout is not None
+        fd = proc.stdout.fileno()
+        pending = b""
         try:
-            for raw in proc.stdout:
-                line = raw.decode(errors="replace").strip()
-                if line.startswith("out_time_us=") and expected_duration and on_progress:
-                    try:
-                        us = int(line.split("=", 1)[1])
-                        on_progress(min(99.0, 100.0 * us / 1e6 / expected_duration))
-                    except ValueError:
-                        pass
+            eof = False
+            while not eof:
+                ready, _, _ = select.select([fd], [], [], CHECK_INTERVAL)
+                if ready:
+                    chunk = os.read(fd, 65536)
+                    if not chunk:
+                        eof = True
+                    else:
+                        *lines, pending = (pending + chunk).split(b"\n")
+                        for raw in lines:
+                            _report_progress(raw, expected_duration, on_progress)
                 now = time.monotonic()
-                if now - last_check > 0.5:
+                if now - last_check >= CHECK_INTERVAL:
                     last_check = now
                     if should_cancel and should_cancel():
                         raise Cancelled()
                     if now - start > timeout:
                         raise TimeoutError()
             proc.wait(timeout=30)
-        except (Cancelled, TimeoutError) as e:
-            proc.terminate()
+        except (Cancelled, TimeoutError, subprocess.TimeoutExpired) as e:
+            if proc.poll() is None:
+                proc.terminate()
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -206,6 +236,12 @@ def run_ffmpeg(
             if isinstance(e, Cancelled):
                 raise
             raise permanent(ErrorCode.RENDER_FAILED, "Renderingen tog för lång tid och stoppades.") from e
+        except BaseException:
+            # Unexpected error: never leave ffmpeg running behind a failed job.
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            raise
         if proc.returncode != 0:
             errf.seek(0)
             tail = errf.read()[-2000:].decode(errors="replace")

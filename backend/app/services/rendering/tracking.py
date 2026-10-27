@@ -13,7 +13,10 @@ centred crop instead of failing the render.
 from __future__ import annotations
 
 import logging
+import os
+import select
 import subprocess
+import time
 from pathlib import Path
 
 import cv2
@@ -23,6 +26,7 @@ from app.services.rendering.ffmpeg import MediaInfo, ffmpeg_bin
 
 log = logging.getLogger("clipforge.tracking")
 
+TRACK_TIMEOUT_SECONDS = 600.0  # total budget for decoding one clip; past this, fall back to a centred crop
 SAMPLE_FPS = 4  # analysis frames per second
 ANALYSIS_WIDTH = 640  # frames are scaled to this width before detection
 MIN_FACE_FRAC = 0.08  # smallest face side, as a fraction of frame width
@@ -118,14 +122,38 @@ def _gray_frames(source: Path, start: float, duration: float, width: int, height
         "pipe:1",
     ]
     frame_bytes = width * height
+    deadline = time.monotonic() + TRACK_TIMEOUT_SECONDS
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
         assert proc.stdout is not None
-        while True:
-            buf = proc.stdout.read(frame_bytes)
-            if len(buf) < frame_bytes:
-                break
-            yield np.frombuffer(buf, dtype=np.uint8).reshape(height, width).copy()
-        proc.wait()
+        fd = proc.stdout.fileno()
+        try:
+            while True:
+                buf = _read_exact(fd, frame_bytes, deadline)
+                if len(buf) < frame_bytes:
+                    break
+                yield np.frombuffer(buf, dtype=np.uint8).reshape(height, width).copy()
+            proc.wait(timeout=30)
+        finally:
+            # Covers timeouts and early exits: a stalled decoder must not outlive this call.
+            if proc.poll() is None:
+                proc.kill()
+
+
+def _read_exact(fd: int, n: int, deadline: float) -> bytes:
+    """Read n bytes from a pipe, raising TimeoutError if the overall deadline passes first."""
+    buf = bytearray()
+    while len(buf) < n:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Motivspårningen tog för lång tid.")
+        ready, _, _ = select.select([fd], [], [], min(remaining, 1.0))
+        if not ready:
+            continue
+        chunk = os.read(fd, n - len(buf))
+        if not chunk:
+            break  # end of stream
+        buf.extend(chunk)
+    return bytes(buf)
 
 
 def _subject_centre(
